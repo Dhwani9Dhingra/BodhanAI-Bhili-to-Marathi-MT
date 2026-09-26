@@ -58,7 +58,7 @@ lora:
     - "embed_tokens"
 
 training:
-  max_steps: 300
+  max_steps: 700
   train_batch_size: 1
   eval_batch_size: 1
   gradient_accumulation_steps: 8
