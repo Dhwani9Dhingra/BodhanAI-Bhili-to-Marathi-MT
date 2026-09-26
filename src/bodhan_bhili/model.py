@@ -326,19 +326,21 @@ def build_trainable_parameter_report(
 
 def attach_qlora(model, config: ExperimentConfig):
     """Prepare the quantized base model and attach LoRA adapters."""
-    from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
+    import torch
+    from peft import LoraConfig, TaskType, get_peft_model
 
     if not (config.quantization.enabled and config.quantization.load_in_4bit):
         raise ValueError(
             "Part 2 smoke testing expects the base model to be loaded in 4-bit QLoRA mode."
         )
 
-    model = prepare_model_for_kbit_training(
-        model, use_gradient_checkpointing=(config.training.gradient_checkpointing)
-    )
+    # PEFT's generic preparation upcasts large frozen weights and can exhaust a T4.
+    for parameter in model.parameters():
+        parameter.requires_grad_(False)
 
-    if hasattr(model.config, "use_cache"):
-        model.config.use_cache = False
+    for model_config in (model.config, getattr(model.config, "text_config", None)):
+        if model_config is not None and hasattr(model_config, "use_cache"):
+            model_config.use_cache = False
     exclusions = effective_lora_exclusions(config)
     target_modules = discover_lora_target_modules(model, exclusions)
     lora_config = LoraConfig(
@@ -350,10 +352,39 @@ def attach_qlora(model, config: ExperimentConfig):
         task_type=(TaskType.CAUSAL_LM),
     )
 
-    model = get_peft_model(model, lora_config)
+    model = get_peft_model(model, lora_config, autocast_adapter_dtype=True)
     report = build_trainable_parameter_report(model, target_modules, exclusions)
 
+    # Only the small, verified LoRA parameters may be converted to fp32.
+    for parameter in model.parameters():
+        if parameter.requires_grad and parameter.dtype != torch.float32:
+            parameter.data = parameter.data.to(torch.float32)
+
+    if config.training.gradient_checkpointing:
+        # Non-reentrant checkpointing supports gradients with frozen input embeddings.
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+
+    report["preparation"] = "freeze_base_preserve_dtype"
+    report["adapter_dtype"] = "float32"
+    report["gradient_checkpointing"] = config.training.gradient_checkpointing
+
     return (model, report)
+
+
+def check_adapter_gradients(parameters) -> int:
+    """Reject missing, non-finite, or entirely zero adapter gradients."""
+    import torch
+
+    gradients = [parameter.grad for parameter in parameters if parameter.grad is not None]
+    if not gradients:
+        raise RuntimeError("No adapter gradients reached the optimizer.")
+
+    norms = torch.stack([gradient.detach().float().norm() for gradient in gradients])
+    if not torch.isfinite(norms).all().item():
+        raise RuntimeError("Non-finite adapter gradients encountered.")
+    if not norms.ne(0).any().item():
+        raise RuntimeError("All adapter gradients are zero.")
+    return len(gradients)
 
 
 def trainable_parameter_digest(model) -> str:
@@ -476,6 +507,7 @@ def run_smoke_optimizer_steps(
     micro_step = 0
     current_losses: list[float] = []
     optimizer_step_losses: list[float] = []
+    parameters_with_gradients: list[int] = []
 
     while completed_steps < optimizer_steps:
         example = encoded_examples[micro_step % len(encoded_examples)]
@@ -490,12 +522,14 @@ def run_smoke_optimizer_steps(
         current_losses.append(raw_loss)
 
         (loss / gradient_accumulation).backward()
+        del output, loss, batch
 
         micro_step += 1
 
         if micro_step % gradient_accumulation != 0:
             continue
 
+        parameters_with_gradients.append(check_adapter_gradients(trainable_parameters))
         optimizer.step()
 
         optimizer.zero_grad(set_to_none=True)
@@ -514,6 +548,7 @@ def run_smoke_optimizer_steps(
         "gradient_accumulation_steps": gradient_accumulation,
         "learning_rate": config.training.learning_rate,
         "loss_per_optimizer_step": [round(value, 6) for value in optimizer_step_losses],
+        "parameters_with_gradients_per_step": parameters_with_gradients,
         "first_step_loss": round(optimizer_step_losses[0], 6),
         "last_step_loss": round(optimizer_step_losses[-1], 6),
     }

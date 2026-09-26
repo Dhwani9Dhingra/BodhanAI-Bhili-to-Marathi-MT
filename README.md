@@ -137,7 +137,19 @@ Existing local artifacts are not migrated automatically. Copy any run you want t
 
 - The saved data report records 11,195 train, 1,400 dev, and 1,400 test rows; the initial plan describes different counts and evaluation caps.
 - The smoke test currently samples the test split. Reserving that split for final evaluation requires a separate change.
-- QLoRA setup currently calls `prepare_model_for_kbit_training`, which differs from decision D15 in the initial plan.
 - Package versions are constrained by ranges, not pinned to a verified Colab environment.
 
 These experiment settings and behaviors were preserved during repository cleanup.
+
+## QLoRA memory fix
+
+QLoRA preparation now freezes the base weights at their loaded precision instead of using
+`prepare_model_for_kbit_training`, whose blanket fp32 conversion caused the T4 setup OOM.
+Only LoRA parameters are trainable and converted to fp32. Non-reentrant gradient checkpointing
+is enabled when configured, and each optimizer step checks for finite, nonzero adapter gradients.
+Rank, target modules, optimizer, and dataset settings are unchanged.
+
+The smoke test logs allocated/reserved GPU memory and process-wide peaks around model loading,
+adapter setup, training, and reload. These snapshots are also saved in `model_smoke_report.json`,
+including on failure. This removes the known upcast allocation; training still needs verification
+on Colab. Restart a runtime that has encountered an OOM before retrying with the updated code.

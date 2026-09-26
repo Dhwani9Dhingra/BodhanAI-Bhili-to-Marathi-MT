@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 
 from bodhan_bhili.core.config import load_config
-from bodhan_bhili.core.logging import setup_logging
+from bodhan_bhili.core.logging import get_logger, setup_logging
 from bodhan_bhili.core.manifest import build_initial_manifest, write_manifest
 from bodhan_bhili.core.paths import ArtifactPaths
 from bodhan_bhili.core.serialization import atomic_write_json, read_json
@@ -109,6 +109,23 @@ def save_predictions(frame: pd.DataFrame, destination: Path) -> None:
     frame.to_csv(destination, index=False, encoding="utf-8", lineterminator="\n")
 
 
+def record_gpu_memory(stage: str, snapshots: dict) -> None:
+    """Log GiB usage and retain process-wide peaks for the smoke report."""
+    import torch
+
+    if not torch.cuda.is_available():
+        return
+
+    stats = {
+        "allocated_gib": torch.cuda.memory_allocated() / 1024**3,
+        "reserved_gib": torch.cuda.memory_reserved() / 1024**3,
+        "peak_allocated_gib": torch.cuda.max_memory_allocated() / 1024**3,
+        "peak_reserved_gib": torch.cuda.max_memory_reserved() / 1024**3,
+    }
+    snapshots[stage] = {name: round(value, 3) for name, value in stats.items()}
+    get_logger().info("GPU memory [%s], GiB: %s", stage, snapshots[stage])
+
+
 def main() -> int:
     """Execute the complete Part 2 smoke test."""
     args = parse_args()
@@ -121,6 +138,7 @@ def main() -> int:
     smoke_report_path = paths.model_smoke_report
     trainable_report_path = paths.trainable_parameters_report
     predictions_path = paths.smoke_predictions
+    gpu_memory = {}
 
     logger.info("=" * 72)
 
@@ -150,7 +168,9 @@ def main() -> int:
 
         logger.info("Loading Bodhan in 4-bit NF4...")
 
+        record_gpu_memory("before_base_load", gpu_memory)
         model = load_quantized_base_model(config)
+        record_gpu_memory("after_base_load", gpu_memory)
         base_predictions = []
 
         for index, row in eval_frame.iterrows():
@@ -170,7 +190,9 @@ def main() -> int:
 
         logger.info("Discovering safe LoRA target modules...")
 
+        record_gpu_memory("before_qlora_setup", gpu_memory)
         (model, trainable_report) = attach_qlora(model, config)
+        record_gpu_memory("after_qlora_setup", gpu_memory)
 
         atomic_write_json(trainable_report, trainable_report_path)
 
@@ -231,9 +253,11 @@ def main() -> int:
 
         logger.info("Running %d real optimizer step(s)...", optimizer_steps)
 
+        record_gpu_memory("before_training", gpu_memory)
         training_report = run_smoke_optimizer_steps(
             model, encoded_examples, config, optimizer_steps=(optimizer_steps)
         )
+        record_gpu_memory("after_training", gpu_memory)
 
         final_digest = trainable_parameter_digest(model)
         adapters_changed = initial_digest != final_digest
@@ -253,6 +277,7 @@ def main() -> int:
         del processor
 
         release_gpu_memory()
+        record_gpu_memory("after_training_model_release", gpu_memory)
 
         logger.info("Training model destroyed. Loading fresh Bodhan base model...")
 
@@ -266,6 +291,7 @@ def main() -> int:
         )
 
         reloaded_model.eval()
+        record_gpu_memory("after_adapter_reload", gpu_memory)
 
         tuned_predictions = []
 
@@ -283,6 +309,7 @@ def main() -> int:
             tuned_predictions.append(prediction)
 
         eval_frame["tuned_prediction"] = tuned_predictions
+        record_gpu_memory("after_reload_generation", gpu_memory)
 
         changed_predictions = int(
             (eval_frame["base_prediction"] != eval_frame["tuned_prediction"]).sum()
@@ -313,6 +340,7 @@ def main() -> int:
                 "trainable_percentage": trainable_report["trainable_percentage"],
             },
             "training": training_report,
+            "gpu_memory": gpu_memory,
             "training_examples_used": len(encoded_examples),
             "skipped_too_long": skipped_long,
             "skipped_other": skipped_other,
@@ -369,7 +397,16 @@ def main() -> int:
         return 0
 
     except Exception as exc:
-        failure_report = {"status": "failed", "error_type": type(exc).__name__, "error": str(exc)}
+        try:
+            record_gpu_memory("failure", gpu_memory)
+        except Exception:
+            logger.warning("GPU memory snapshot unavailable after failure.")
+        failure_report = {
+            "status": "failed",
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "gpu_memory": gpu_memory,
+        }
 
         atomic_write_json(failure_report, smoke_report_path)
 
