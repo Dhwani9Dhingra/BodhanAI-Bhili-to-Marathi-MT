@@ -1,0 +1,2 @@
+# CPU-friendly development and unit-test environment.
+-e .[dev]

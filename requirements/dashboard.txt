@@ -1,0 +1,4 @@
+# Lightweight laptop environment.
+# No CUDA / bitsandbytes installation is required just
+# to view the final Streamlit dashboard.
+-e .[dashboard]
