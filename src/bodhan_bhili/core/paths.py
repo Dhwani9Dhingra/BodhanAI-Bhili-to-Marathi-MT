@@ -30,6 +30,8 @@ class ArtifactPaths:
     adapter_initial: Path
     adapter_best: Path
     adapter_final: Path
+    smoke_adapter_initial: Path
+    smoke_adapter_final: Path
     evaluation: Path
     weights: Path
     dashboard_exports: Path
@@ -51,6 +53,15 @@ class ArtifactPaths:
     data_cleaning_report: Path
     split_manifest: Path
     test_set_sha256: Path
+
+    # ------------------------------------------------------------------
+    # MODEL / SMOKE-TEST REPORTS
+    # ------------------------------------------------------------------
+
+    trainable_parameters_report: Path
+    model_smoke_report: Path
+    smoke_predictions: Path
+    smoke_weight_changes: Path
 
     # ------------------------------------------------------------------
     # GENERAL EXPERIMENT METADATA
@@ -141,6 +152,16 @@ class ArtifactPaths:
                 / "adapter_final"
             ),
 
+            smoke_adapter_initial=(
+                checkpoints
+                / "smoke_adapter_initial"
+            ),
+
+            smoke_adapter_final=(
+                checkpoints
+                / "smoke_adapter_final"
+            ),
+
             evaluation=(
                 run_root
                 / "evaluation"
@@ -200,6 +221,32 @@ class ArtifactPaths:
             ),
 
             # ----------------------------------------------------------
+            # MODEL / SMOKE-TEST REPORTS
+            # ----------------------------------------------------------
+
+            trainable_parameters_report=(
+                reports
+                / "trainable_parameters.json"
+            ),
+
+            model_smoke_report=(
+                reports
+                / "model_smoke_report.json"
+            ),
+
+            smoke_predictions=(
+                run_root
+                / "evaluation"
+                / "smoke_predictions.tsv"
+            ),
+
+            smoke_weight_changes=(
+                run_root
+                / "weights"
+                / "smoke_weight_changes.csv"
+            ),
+
+            # ----------------------------------------------------------
             # GENERAL METADATA
             # ----------------------------------------------------------
 
@@ -246,6 +293,8 @@ class ArtifactPaths:
             self.adapter_initial,
             self.adapter_best,
             self.adapter_final,
+            self.smoke_adapter_initial,
+            self.smoke_adapter_final,
             self.evaluation,
             self.weights,
             self.dashboard_exports,
