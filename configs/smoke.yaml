@@ -69,6 +69,7 @@ training:
   optimizer: "paged_adamw_8bit"
   logging_steps: 1
   evaluation_steps: 5
+  eval_examples: 20
   save_steps: 5
   save_total_limit: 2
 

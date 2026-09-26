@@ -22,6 +22,7 @@ class ArtifactPaths:
     tensorboard: Path
     checkpoints: Path
     trainer_checkpoints: Path
+    incomplete_checkpoints: Path
     adapter_initial: Path
     adapter_best: Path
     adapter_final: Path
@@ -39,6 +40,10 @@ class ArtifactPaths:
     trainable_parameters_report: Path
     model_smoke_report: Path
     smoke_predictions: Path
+
+    training_fingerprint: Path
+    training_progress: Path
+    training_report: Path
 
     resolved_config: Path
     manifest: Path
@@ -65,6 +70,7 @@ class ArtifactPaths:
             tensorboard=(run_root / "tensorboard"),
             checkpoints=checkpoints,
             trainer_checkpoints=(checkpoints / "trainer"),
+            incomplete_checkpoints=(checkpoints / "trainer_incomplete"),
             adapter_initial=(checkpoints / "adapter_initial"),
             adapter_best=(checkpoints / "adapter_best"),
             adapter_final=(checkpoints / "adapter_final"),
@@ -79,6 +85,9 @@ class ArtifactPaths:
             trainable_parameters_report=(reports / "trainable_parameters.json"),
             model_smoke_report=(reports / "model_smoke_report.json"),
             smoke_predictions=(run_root / "evaluation" / "model_smoke_predictions.csv"),
+            training_fingerprint=(reports / "training_fingerprint.json"),
+            training_progress=(reports / "training_progress.json"),
+            training_report=(reports / "training_report.json"),
             resolved_config=(reports / "resolved_config.json"),
             manifest=(reports / "experiment_manifest.json"),
             run_state=(reports / "run_state.json"),

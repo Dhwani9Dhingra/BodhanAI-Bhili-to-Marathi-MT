@@ -149,6 +149,7 @@ class TrainingConfig(StrictModel):
     optimizer: Literal["paged_adamw_8bit"] = "paged_adamw_8bit"
     logging_steps: int = Field(default=1, ge=1)
     evaluation_steps: int = Field(default=5, ge=1)
+    eval_examples: int = Field(default=20, ge=1)
     save_steps: int = Field(default=5, ge=1)
     save_total_limit: int = Field(default=2, ge=1)
 

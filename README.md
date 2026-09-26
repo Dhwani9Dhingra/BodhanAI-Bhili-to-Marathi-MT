@@ -11,7 +11,9 @@ Implemented:
 - Translation prompts, completion-only labels, LoRA module selection, and a GPU smoke test that saves and reloads an adapter.
 - CPU unit tests for configuration, paths, data preparation, prompts, masking, and run state.
 
-Full training, baseline scoring, retention evaluation, final evaluation, and the dashboard are still pending. The smoke test is not a completed training experiment.
+- Resumable QLoRA training (`scripts.train`) with Drive checkpoints and best-dev-loss adapter export.
+
+Baseline scoring, retention evaluation, final evaluation, and the dashboard are still pending. Full training has not yet been verified on Colab.
 
 ## Repository layout
 
@@ -23,6 +25,7 @@ src/bodhan_bhili/
     core/                Configuration, paths, logging, state, and preflight
     data.py              CPU data preparation
     model.py             Model loading, translation, and QLoRA utilities
+    training.py          Checkpoint discovery, resume guard, batching, callbacks
 tests/unit/              CPU unit tests
 ```
 
@@ -111,22 +114,29 @@ Run the model smoke test:
 
 Use the same config and run ID for stages that share prepared data. Rerunning a stage can replace its outputs, so choose a new run ID for a separate experiment. The smoke script defaults to at most three optimizer steps unless `--steps` is supplied.
 
-`configs/colab_t4.yaml` holds the proposed main experiment settings; the full training entry point has not been implemented.
+Run full training with the same config used for `prepare_data`:
+
+```python
+!python -m scripts.train --config configs/colab_t4.yaml
+```
+
+Training saves a checkpoint to `checkpoints/trainer/` on Drive every `save_steps` optimizer steps, keeping the newest `save_total_limit`. Each checkpoint holds the LoRA adapter, optimizer, scheduler, RNG state, and step count. If the runtime disconnects, mount Drive, reinstall, and rerun the same command: it resumes from the newest complete checkpoint. Checkpoints missing files (an interrupted save or unfinished Drive sync) are moved to `checkpoints/trainer_incomplete/`. Resuming is refused if the prepared data or training hyperparameters changed since the first checkpoint; save, evaluation, and logging frequencies may change freely. Dev loss is computed on `eval_examples` dev rows every `evaluation_steps`, and the lowest-loss adapter is exported to `adapter_best/`.
 
 ## Drive artifact layout
 
 ```text
 BodhanAI/artifacts/bodhan-bhili-mt/<run_id>/
     data/                train.tsv, dev.tsv, test.tsv
-    reports/             Config, manifest, state, data audit, hashes, smoke reports
+    reports/             Config, manifest, state, data audit, hashes, smoke and training reports
     logs/                pipeline.log
     evaluation/          model_smoke_predictions.csv
     checkpoints/
         adapter_initial/ Adapter before smoke updates
-        adapter_final/   Saved smoke adapter and processor
-        adapter_best/    Reserved for full training
-        trainer/         Reserved for resumable training
-    tensorboard/         Reserved for training event logs
+        adapter_final/   Final adapter and processor (smoke or training)
+        adapter_best/    Lowest dev-loss training adapter and best_metric.json
+        trainer/         Resumable checkpoint-<step>/ folders
+        trainer_incomplete/  Unusable checkpoints moved aside on resume
+    tensorboard/         Training event logs
 ```
 
 A future dashboard can read the JSON reports and CSV predictions directly from this run directory. Reports include split counts and hashes, cleaning reasons, run metadata, trainable parameter details, and smoke losses. Predictions retain record IDs, source text, references, and before/after outputs. Some folders remain empty until their stage is implemented.
