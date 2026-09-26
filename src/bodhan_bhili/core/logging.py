@@ -1,15 +1,4 @@
-"""
-Central logging configuration.
-
-Every pipeline component will use the same named logger.
-
-Logs go to BOTH:
-    1. the Colab terminal;
-    2. a persistent pipeline.log file.
-
-When ARTIFACT_ROOT points to Google Drive, the file survives a
-Colab disconnection.
-"""
+"""Central logging configuration."""
 
 from __future__ import annotations
 
@@ -17,106 +6,49 @@ import logging
 import sys
 from pathlib import Path
 
-
 LOGGER_NAME = "bodhan_bhili"
 
 
-def setup_logging(
-    log_file: str | Path,
-    level: int = logging.INFO,
-) -> logging.Logger:
+def setup_logging(log_file: str | Path, level: int = logging.INFO) -> logging.Logger:
     """Configure and return the project logger."""
+    log_file = Path(log_file)
 
-    log_file = Path(
-        log_file
-    )
+    log_file.parent.mkdir(parents=True, exist_ok=True)
 
-    log_file.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    logger = logging.getLogger(LOGGER_NAME)
 
-    logger = logging.getLogger(
-        LOGGER_NAME
-    )
+    logger.setLevel(level)
 
-    logger.setLevel(
-        level
-    )
-
-    # Do not forward messages to the root logger,
-    # otherwise Jupyter/Colab can print duplicates.
     logger.propagate = False
 
-    # Important when a notebook cell is executed repeatedly:
-    # remove old handlers first.
-    for handler in list(
-        logger.handlers
-    ):
-        logger.removeHandler(
-            handler
-        )
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
 
         handler.close()
 
     formatter = logging.Formatter(
-        fmt=(
-            "%(asctime)s | "
-            "%(levelname)-8s | "
-            "%(name)s | "
-            "%(message)s"
-        ),
-        datefmt="%Y-%m-%d %H:%M:%S",
+        fmt=("%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"), datefmt="%Y-%m-%d %H:%M:%S"
     )
 
-    # --------------------------------------------------------
-    # CONSOLE
-    # --------------------------------------------------------
+    console_handler = logging.StreamHandler(sys.stdout)
 
-    console_handler = logging.StreamHandler(
-        sys.stdout
-    )
+    console_handler.setLevel(level)
 
-    console_handler.setLevel(
-        level
-    )
+    console_handler.setFormatter(formatter)
 
-    console_handler.setFormatter(
-        formatter
-    )
+    file_handler = logging.FileHandler(filename=log_file, mode="a", encoding="utf-8")
 
-    # --------------------------------------------------------
-    # PERSISTENT FILE
-    # --------------------------------------------------------
+    file_handler.setLevel(level)
 
-    file_handler = logging.FileHandler(
-        filename=log_file,
-        mode="a",
-        encoding="utf-8",
-    )
+    file_handler.setFormatter(formatter)
 
-    file_handler.setLevel(
-        level
-    )
+    logger.addHandler(console_handler)
 
-    file_handler.setFormatter(
-        formatter
-    )
-
-    logger.addHandler(
-        console_handler
-    )
-
-    logger.addHandler(
-        file_handler
-    )
+    logger.addHandler(file_handler)
 
     return logger
 
 
 def get_logger() -> logging.Logger:
     """Get the shared project logger."""
-
-    return logging.getLogger(
-        LOGGER_NAME
-    )
+    return logging.getLogger(LOGGER_NAME)

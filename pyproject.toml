@@ -2,14 +2,12 @@
 requires = ["setuptools>=75", "wheel"]
 build-backend = "setuptools.build_meta"
 
-
 [project]
 name = "bodhan-bhili-mt"
 version = "0.1.0"
 description = "QLoRA fine-tuning pipeline for Dehwali Bhili to Marathi translation using Bodhan Indic-Translate."
 readme = "README.md"
 
-# Bodhan's current model card requires Python >= 3.10.
 requires-python = ">=3.10"
 
 authors = [
@@ -17,37 +15,15 @@ authors = [
 ]
 
 dependencies = [
-    # Strong configuration validation.
     "pydantic>=2.10,<3",
-
-    # Human-readable experiment configuration.
     "PyYAML>=6.0.2",
-
-    # Reliable semantic-version comparisons.
     "packaging>=24.2",
-
-    # Environment / hardware metadata.
-    "psutil>=6.1",
-
-    # Needed to authenticate and inspect the gated Bodhan repository.
     "huggingface-hub>=0.30",
-
-    # Required by the data preparation pipeline as well as training.
     "pandas>=2.2",
 ]
 
-
 [project.optional-dependencies]
 
-# ------------------------------------------------------------
-# GPU TRAINING ENVIRONMENT
-# ------------------------------------------------------------
-#
-# These packages will be installed inside Google Colab.
-#
-# torch is included as a requirement but if Colab already provides
-# a compatible newer CUDA-enabled PyTorch build, pip normally leaves
-# it unchanged.
 train = [
     "torch>=2.6",
     "transformers>=5.12,<6",
@@ -58,55 +34,33 @@ train = [
     "sacrebleu>=2.5",
     "safetensors>=0.5",
     "numpy>=2.0",
-    "openpyxl>=3.1",
     "tensorboard>=2.18",
     "tqdm>=4.67",
 ]
 
-
-# ------------------------------------------------------------
-# STREAMLIT RESULT DASHBOARD
-# ------------------------------------------------------------
-#
-# This will be used on the Windows laptop in Part 6.
-dashboard = [
-    "streamlit>=1.45",
-    "plotly>=6.0",
-    "pandas>=2.2",
-    "numpy>=2.0",
-]
-
-
-# ------------------------------------------------------------
-# DEVELOPMENT / TESTING
-# ------------------------------------------------------------
 dev = [
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "ruff>=0.11",
 ]
 
-
 [tool.setuptools.packages.find]
 where = ["src"]
-
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-ra"
 
-
 [tool.ruff]
 line-length = 100
 target-version = "py310"
 
-
 [tool.ruff.lint]
-select = [
-    "E",   # pycodestyle errors
-    "F",   # pyflakes
-    "I",   # import ordering
-    "B",   # common Python bugs
-    "UP",  # modern Python syntax
-]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.format]
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false

@@ -1,18 +1,4 @@
-"""
-Collect environment metadata for reproducibility.
-
-The final submission should make it possible for a reviewer to answer:
-
-    Which GPU?
-    Which CUDA version?
-    Which PyTorch?
-    Which Transformers?
-    Which PEFT?
-    Which Git commit?
-    Which Python version?
-
-without guessing.
-"""
+"""Collect environment metadata for reproducibility."""
 
 from __future__ import annotations
 
@@ -21,7 +7,6 @@ import platform
 import subprocess
 from pathlib import Path
 from typing import Any
-
 
 _TRACKED_PACKAGES = (
     "torch",
@@ -37,143 +22,67 @@ _TRACKED_PACKAGES = (
 )
 
 
-def package_version(
-    distribution_name: str,
-) -> str | None:
+def package_version(distribution_name: str) -> str | None:
     """Return installed package version without importing the package."""
-
     try:
-        return importlib.metadata.version(
-            distribution_name
-        )
+        return importlib.metadata.version(distribution_name)
 
     except importlib.metadata.PackageNotFoundError:
         return None
 
 
-def _run_git_command(
-    arguments: list[str],
-) -> str | None:
+def _run_git_command(arguments: list[str]) -> str | None:
     """Execute one small Git command safely."""
-
     try:
         result = subprocess.run(
-            ["git", *arguments],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=5,
+            ["git", *arguments], check=True, capture_output=True, text=True, timeout=5
         )
 
         return result.stdout.strip()
 
-    except (
-        FileNotFoundError,
-        subprocess.CalledProcessError,
-        subprocess.TimeoutExpired,
-    ):
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return None
 
 
 def collect_git_info() -> dict[str, Any]:
     """Collect commit and working-tree information."""
-
-    commit = _run_git_command(
-        ["rev-parse", "HEAD"]
-    )
-
-    branch = _run_git_command(
-        ["rev-parse", "--abbrev-ref", "HEAD"]
-    )
-
-    status = _run_git_command(
-        ["status", "--porcelain"]
-    )
+    commit = _run_git_command(["rev-parse", "HEAD"])
+    branch = _run_git_command(["rev-parse", "--abbrev-ref", "HEAD"])
+    status = _run_git_command(["status", "--porcelain"])
 
     return {
-        "commit":
-            commit,
-
-        "branch":
-            branch,
-
-        "working_tree_dirty":
-            bool(status)
-            if status is not None
-            else None,
+        "commit": commit,
+        "branch": branch,
+        "working_tree_dirty": bool(status) if status is not None else None,
     }
 
 
 def collect_gpu_info() -> dict[str, Any]:
     """Collect GPU details when CUDA is available."""
-
     try:
         import torch
 
     except ImportError:
-
-        return {
-            "cuda_available":
-                False,
-
-            "reason":
-                "PyTorch is not installed.",
-        }
+        return {"cuda_available": False, "reason": "PyTorch is not installed."}
 
     info: dict[str, Any] = {
-        "cuda_available":
-            bool(
-                torch.cuda.is_available()
-            ),
-
-        "torch_cuda_version":
-            torch.version.cuda,
+        "cuda_available": bool(torch.cuda.is_available()),
+        "torch_cuda_version": torch.version.cuda,
     }
 
     if not torch.cuda.is_available():
         return info
 
-    device_index = (
-        torch.cuda.current_device()
-    )
-
-    properties = (
-        torch.cuda.get_device_properties(
-            device_index
-        )
-    )
+    device_index = torch.cuda.current_device()
+    properties = torch.cuda.get_device_properties(device_index)
 
     info.update(
         {
-            "device_index":
-                int(
-                    device_index
-                ),
-
-            "gpu_name":
-                properties.name,
-
-            "vram_gib":
-                round(
-                    properties.total_memory
-                    / (1024**3),
-                    3,
-                ),
-
-            "compute_capability":
-                (
-                    int(
-                        properties.major
-                    ),
-                    int(
-                        properties.minor
-                    ),
-                ),
-
-            "bf16_supported":
-                bool(
-                    torch.cuda.is_bf16_supported()
-                ),
+            "device_index": int(device_index),
+            "gpu_name": properties.name,
+            "vram_gib": round(properties.total_memory / (1024**3), 3),
+            "compute_capability": (int(properties.major), int(properties.minor)),
+            "bf16_supported": bool(torch.cuda.is_bf16_supported()),
         }
     )
 
@@ -181,15 +90,7 @@ def collect_gpu_info() -> dict[str, Any]:
 
 
 def recommended_compute_dtype() -> str:
-    """
-    Pick the compute dtype based on the ACTUAL GPU.
-
-    Example:
-        T4  -> float16
-        L4  -> bfloat16
-        A100 -> bfloat16
-    """
-
+    """Pick the compute dtype based on the ACTUAL GPU."""
     try:
         import torch
 
@@ -207,37 +108,13 @@ def recommended_compute_dtype() -> str:
 
 def collect_environment() -> dict[str, Any]:
     """Collect environment information without exposing credentials."""
-
     return {
-        "python_version":
-            platform.python_version(),
-
-        "platform":
-            platform.platform(),
-
-        "machine":
-            platform.machine(),
-
-        "packages": {
-            package:
-                package_version(
-                    package
-                )
-            for package in _TRACKED_PACKAGES
-        },
-
-        "gpu":
-            collect_gpu_info(),
-
-        "recommended_compute_dtype":
-            recommended_compute_dtype(),
-
-        "git":
-            collect_git_info(),
-
-        # Useful when reading logs later.
-        "working_directory":
-            str(
-                Path.cwd()
-            ),
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+        "machine": platform.machine(),
+        "packages": {package: package_version(package) for package in _TRACKED_PACKAGES},
+        "gpu": collect_gpu_info(),
+        "recommended_compute_dtype": recommended_compute_dtype(),
+        "git": collect_git_info(),
+        "working_directory": str(Path.cwd()),
     }

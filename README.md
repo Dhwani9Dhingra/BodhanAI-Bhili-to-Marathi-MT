@@ -1,71 +1,143 @@
-# bodhan-bhili-mt
-Fine tuning Bodhan AI models
+# Bodhan Indic-Translate: Dehwali Bhili to Marathi
 
-# Bodhan Indic-Translate — Dehwali Bhili → Marathi
+Adapt `bodhan-ai/indic-translate` with 4-bit QLoRA for Dehwali Bhili to Marathi translation. The laptop handles development and data preparation; Google Colab handles GPU work. Google Drive stores experiment artifacts for later analysis and a future dashboard.
 
-This repository contains an end-to-end parameter-efficient fine-tuning
-pipeline for adapting `bodhan-ai/indic-translate` to translate
-Dehwali Bhili into Marathi.
+## Current status
 
-## Research question
+Implemented:
 
-Can 4-bit QLoRA teach Bodhan Indic-Translate to understand an
-unsupported low-resource source language (Dehwali Bhili) and translate
-it into Marathi, a language the base model already supports?
+- Configuration validation, environment checks, logging, and run metadata.
+- Quote-aware TSV loading, text cleaning, grouped splits, leakage checks, and dataset hashes.
+- Translation prompts, completion-only labels, LoRA module selection, and a GPU smoke test that saves and reloads an adapter.
+- CPU unit tests for configuration, paths, data preparation, prompts, masking, and run state.
 
-## Scope
+Full training, baseline scoring, retention evaluation, final evaluation, and the dashboard are still pending. The smoke test is not a completed training experiment.
 
-Primary experiment:
+## Repository layout
 
-    Dehwali Bhili → Marathi
+```text
+configs/                 Smoke and T4 experiment settings
+requirements/            Laptop and Colab installation entry points
+scripts/                 One command per implemented stage
+src/bodhan_bhili/
+    core/                Configuration, paths, logging, state, and preflight
+    data.py              CPU data preparation
+    model.py             Model loading, translation, and QLoRA utilities
+tests/unit/              CPU unit tests
+```
 
-Marathi → Bhili is intentionally excluded from the primary run and is
-reserved for future/stretch work.
+Dependencies are declared in `pyproject.toml`. The requirement files select the appropriate extras. Raw data, credentials, model caches, and generated artifacts are excluded from Git.
 
-## Fine-tuning method
+## Laptop setup
 
-    Bodhan Indic-Translate
-            +
-    4-bit NF4 quantization
-            +
-         LoRA
-            =
-         QLoRA
+Use Python 3.10 or newer. Run commands from the repository root:
 
-## Current implementation status
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements/dev.txt
+.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\ruff.exe check src scripts tests
+.\.venv\Scripts\ruff.exe format --check src scripts tests
+```
 
-Foundation / preflight completed:
+For data preparation, set the artifact root to your actual Google Drive synced folder. The drive letter below is an example; replace it with your own location.
 
-- validated experiment configuration
-- deterministic artifact layout
-- persistent logging
-- reproducibility utilities
-- environment and Git metadata
-- persistent run-state tracking
-- experiment manifest
-- CUDA / VRAM validation
-- bitsandbytes NF4 GPU test
-- Hugging Face gated-model access check
-- Gemma 4 architecture check
-- chrF++ sanity check
+```powershell
+$env:BODHAN_ARTIFACT_ROOT = 'G:/My Drive/BodhanAI/artifacts'
+$env:BODHAN_DATA_FILE = 'C:/path/to/Dehwali_Bhili_Translation_15k_pipeline.tsv'
+$env:BODHAN_RUN_ID = 'smoke_001'
+.\.venv\Scripts\python.exe -m scripts.prepare_data --config configs/smoke.yaml
+```
 
-The next stage is data preparation using the Project Astitva
-Dehwali Bhili–Marathi TSV.
+Wait for Drive to finish syncing before opening the same run in Colab. CPU tests use temporary directories and do not need Drive or a GPU.
 
-## Planned pipeline
+## Colab setup
 
-    preflight
-       ↓
-    data preparation
-       ↓
-    baselines
-       ↓
-    QLoRA fine-tuning
-       ↓
-    adapter reload verification
-       ↓
-    frozen-test evaluation
-       ↓
-    analysis
-       ↓
-    TensorBoard + Streamlit + documentation
+Select a GPU runtime. Clone or upload the repository to Colab's local disk, then change to its root with `%cd`. Accept the model's access terms on Hugging Face and add a read token named `HF_TOKEN` to Colab Secrets.
+
+Run this notebook cell before any pipeline command:
+
+```python
+import os
+from google.colab import drive, userdata
+
+drive.mount('/content/drive')
+os.environ['HF_TOKEN'] = userdata.get('HF_TOKEN')
+os.environ['BODHAN_ARTIFACT_ROOT'] = '/content/drive/MyDrive/BodhanAI/artifacts'
+os.environ['BODHAN_HF_CACHE'] = '/content/hf_cache'
+os.environ['BODHAN_RUN_ID'] = 'smoke_001'
+```
+
+Install the Colab dependencies from the repository root:
+
+```python
+%pip install -r requirements/colab.txt
+```
+
+The default artifact path in both configs is on Google Drive. Scripts refuse to create that path if Drive is not mounted. Model downloads remain on Colab's temporary disk; only adapters and experiment outputs belong in the artifact directory.
+
+Environment overrides:
+
+| Variable | Purpose |
+| --- | --- |
+| `BODHAN_ARTIFACT_ROOT` | Drive directory containing all experiment runs |
+| `BODHAN_DATA_FILE` | Raw AIKosh TSV location |
+| `BODHAN_HF_CACHE` | Temporary model download cache |
+| `BODHAN_RUN_ID` | Run folder shared by the stages of one experiment |
+| `HF_TOKEN` | Hugging Face access token |
+
+`.env.example` lists these variables. Scripts do not automatically load `.env` files.
+
+## Stage commands
+
+Run preflight in Colab:
+
+```python
+!python -m scripts.preflight --config configs/smoke.yaml
+```
+
+If you already prepared `smoke_001` on the laptop and synced it to Drive, use those files. Otherwise, upload the raw TSV to Drive, set its path, and prepare it in Colab:
+
+```python
+os.environ['BODHAN_DATA_FILE'] = '/content/drive/MyDrive/BodhanAI/data/raw/Dehwali_Bhili_Translation_15k_pipeline.tsv'
+!python -m scripts.prepare_data --config configs/smoke.yaml
+```
+
+Run the model smoke test:
+
+```python
+!python -m scripts.smoke_model --config configs/smoke.yaml --steps 3
+```
+
+Use the same config and run ID for stages that share prepared data. Rerunning a stage can replace its outputs, so choose a new run ID for a separate experiment. The smoke script defaults to at most three optimizer steps unless `--steps` is supplied.
+
+`configs/colab_t4.yaml` holds the proposed main experiment settings; the full training entry point has not been implemented.
+
+## Drive artifact layout
+
+```text
+BodhanAI/artifacts/bodhan-bhili-mt/<run_id>/
+    data/                train.tsv, dev.tsv, test.tsv
+    reports/             Config, manifest, state, data audit, hashes, smoke reports
+    logs/                pipeline.log
+    evaluation/          model_smoke_predictions.csv
+    checkpoints/
+        adapter_initial/ Adapter before smoke updates
+        adapter_final/   Saved smoke adapter and processor
+        adapter_best/    Reserved for full training
+        trainer/         Reserved for resumable training
+    tensorboard/         Reserved for training event logs
+```
+
+A future dashboard can read the JSON reports and CSV predictions directly from this run directory. Reports include split counts and hashes, cleaning reasons, run metadata, trainable parameter details, and smoke losses. Predictions retain record IDs, source text, references, and before/after outputs. Some folders remain empty until their stage is implemented.
+
+Existing local artifacts are not migrated automatically. Copy any run you want to retain into the same project/run layout on Drive before using it there. The cleanup preserves existing local files.
+
+## Decisions still to resolve
+
+- The saved data report records 11,195 train, 1,400 dev, and 1,400 test rows; the initial plan describes different counts and evaluation caps.
+- The smoke test currently samples the test split. Reserving that split for final evaluation requires a separate change.
+- QLoRA setup currently calls `prepare_model_for_kbit_training`, which differs from decision D15 in the initial plan.
+- Package versions are constrained by ranges, not pinned to a verified Colab environment.
+
+These experiment settings and behaviors were preserved during repository cleanup.

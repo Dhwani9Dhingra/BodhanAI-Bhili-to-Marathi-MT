@@ -1,3 +1,1 @@
-# Install this project in editable mode together with
-# GPU-training and developer/test dependencies.
 -e .[train,dev]

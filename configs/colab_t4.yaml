@@ -4,53 +4,37 @@ project:
   direction: "bhili_to_marathi"
   seed: 42
 
-
 run:
   run_id: "bhili_marathi_t4_v1"
   description: "Primary unidirectional Bhili to Marathi QLoRA experiment."
 
-
 paths:
-  artifact_root: "artifacts"
+  artifact_root: "/content/drive/MyDrive/BodhanAI/artifacts"
   hf_cache_dir: ".cache/huggingface"
   raw_data_file: null
 
 dataset:
-  # Actual columns observed in the AIKosh/Astitva TSV.
   source_column: "Dehwali_Bhili"
   target_column: "marathi"
   group_column: "id"
   record_column: "dp_id"
-
   delimiter: "\t"
   encoding: "utf-8"
-
-  # Leakage-safe 80 / 10 / 10 split.
   train_ratio: 0.80
   dev_ratio: 0.10
   test_ratio: 0.10
-
-  # Conservative cleaning thresholds derived from the real dataset.
   min_text_chars: 2
   min_source_devanagari_ratio: 0.50
   min_length_ratio: 0.25
   max_length_ratio: 2.00
-
   remove_exact_duplicates: true
 
-  
 model:
   repo_id: "bodhan-ai/indic-translate"
   target_language: "Marathi"
-
-  # Start conservative.
-  # We may change this only after the token-length audit in Part 2.
   max_train_tokens: 256
-
   max_new_tokens: 512
-
   attention_implementation: "sdpa"
-
 
 quantization:
   enabled: true
@@ -59,14 +43,12 @@ quantization:
   double_quant: true
   compute_dtype: "auto"
 
-
 lora:
   rank: 8
   alpha: 16
   dropout: 0.05
   bias: "none"
   target_strategy: "all_linear_filtered"
-
   exclude_name_fragments:
     - "vision"
     - "visual"
@@ -75,62 +57,35 @@ lora:
     - "lm_head"
     - "embed_tokens"
 
-
 training:
-  # Initial real experiment budget.
-  #
-  # We will only finalize this value after Part 2 tells us:
-  # dataset size + token lengths.
   max_steps: 300
-
   train_batch_size: 1
   eval_batch_size: 1
-
-  # Effective micro-batch accumulation.
   gradient_accumulation_steps: 8
-
   learning_rate: 0.0002
   warmup_ratio: 0.03
   weight_decay: 0.0
-
   gradient_checkpointing: true
-
   optimizer: "paged_adamw_8bit"
-
   logging_steps: 5
-
-  # Translation generation is slow on an 8B model,
-  # so dev generation should not happen every few steps.
   evaluation_steps: 50
-
-  # Frequent persistence protects us from Colab disconnects.
   save_steps: 50
-
   save_total_limit: 2
-
 
 evaluation:
   primary_metric: "chrfpp"
   compute_bleu: true
   compute_copy_metrics: true
-
   bootstrap_samples: 1000
-
-  # Small dev slice used during training.
   dev_generation_samples: 100
-
-  # We will set final test size after dataset audit.
   test_generation_samples: 300
-
 
 preflight:
   minimum_python: "3.10"
   minimum_torch: "2.6"
   minimum_transformers: "5.12"
-
   minimum_vram_gib: 14.0
   minimum_disk_free_gib: 25.0
-
   require_cuda: true
   check_bodhan_access: true
   check_bitsandbytes_nf4: true

@@ -1,50 +1,14 @@
-"""
-Project-wide constants.
-
-Only values that genuinely should not change between experiments
-belong here.
-
-Hyperparameters such as LoRA rank, learning rate, batch size and
-sequence length do NOT belong here. Those belong in YAML configs so
-that every experiment remains reproducible.
-"""
+"""Project-wide constants."""
 
 from __future__ import annotations
-
-
-# ------------------------------------------------------------------
-# PROJECT
-# ------------------------------------------------------------------
-
-PACKAGE_NAME = "bodhan-bhili-mt"
-
-PIPELINE_SCHEMA_VERSION = 1
-
-
-# ------------------------------------------------------------------
-# RESEARCH TASK
-# ------------------------------------------------------------------
-
-SOURCE_LANGUAGE_DISPLAY_NAME = "Dehwali Bhili"
-
-TARGET_LANGUAGE_DISPLAY_NAME = "Marathi"
 
 TRANSLATION_DIRECTION = "bhili_to_marathi"
 
 
-# ------------------------------------------------------------------
-# BODHAN
-# ------------------------------------------------------------------
-
 DEFAULT_MODEL_ID = "bodhan-ai/indic-translate"
 
-# Bodhan's published target-language prompt name.
 MARATHI_PROMPT_NAME = "Marathi"
 
-
-# ------------------------------------------------------------------
-# PIPELINE STAGES
-# ------------------------------------------------------------------
 
 STAGE_PREFLIGHT = "preflight"
 STAGE_DATA_PREPARATION = "data_preparation"

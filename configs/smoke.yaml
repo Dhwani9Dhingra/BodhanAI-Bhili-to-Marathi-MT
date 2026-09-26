@@ -1,110 +1,54 @@
-# ============================================================
-# BODHAN BHILI -> MARATHI
-# DEVELOPMENT / SMOKE CONFIGURATION
-# ============================================================
-#
-# This configuration exists to prove the complete pipeline works
-# before we spend hours on the full experiment.
-
-
 project:
   name: "bodhan-bhili-mt"
   task: "machine_translation"
   direction: "bhili_to_marathi"
   seed: 42
 
-
 run:
   run_id: "smoke_001"
   description: "Tiny end-to-end Bhili to Marathi QLoRA smoke run."
 
-
 paths:
-  # Locally this is ./artifacts.
-  #
-  # In Colab we will override it with:
-  # BODHAN_ARTIFACT_ROOT=/content/drive/MyDrive/...
-  artifact_root: "artifacts"
-
-  # Model cache should remain on Colab's temporary local disk.
-  # Reading 16GB of model shards from Google Drive is slower.
+  artifact_root: "/content/drive/MyDrive/BodhanAI/artifacts"
   hf_cache_dir: ".cache/huggingface"
-
-  # We deliberately leave this null until Part 2 has inspected
-  # the real AIKosh download.
   raw_data_file: null
 
-
 dataset:
-  # Actual columns observed in the AIKosh/Astitva TSV.
   source_column: "Dehwali_Bhili"
   target_column: "marathi"
   group_column: "id"
   record_column: "dp_id"
-
   delimiter: "\t"
   encoding: "utf-8"
-
-  # Leakage-safe 80 / 10 / 10 split.
   train_ratio: 0.80
   dev_ratio: 0.10
   test_ratio: 0.10
-
-  # Conservative cleaning thresholds derived from the real dataset.
   min_text_chars: 2
   min_source_devanagari_ratio: 0.50
   min_length_ratio: 0.25
   max_length_ratio: 2.00
-
   remove_exact_duplicates: true
 
-  
 model:
   repo_id: "bodhan-ai/indic-translate"
-
-  # Main direction is Dehwali Bhili -> Marathi.
-  # Bodhan's prompt therefore names only Marathi.
   target_language: "Marathi"
-
-  # Conservative starting value for a free Colab T4.
   max_train_tokens: 256
-
   max_new_tokens: 512
-
   attention_implementation: "sdpa"
-
 
 quantization:
   enabled: true
-
-  # This makes our method QLoRA rather than ordinary LoRA.
   load_in_4bit: true
-
-  # Hugging Face recommends NF4 for 4-bit training.
   quant_type: "nf4"
-
-  # Nested/double quantization saves additional memory.
   double_quant: true
-
-  # T4 -> float16
-  # A100/L4 -> bfloat16
   compute_dtype: "auto"
 
-
 lora:
-  # Small enough for the first T4 experiment.
   rank: 8
-
   alpha: 16
-
   dropout: 0.05
-
   bias: "none"
-
-  # Part 3 will enumerate all eligible language-model linear
-  # layers and remove multimodal modules explicitly.
   target_strategy: "all_linear_filtered"
-
   exclude_name_fragments:
     - "vision"
     - "visual"
@@ -113,67 +57,35 @@ lora:
     - "lm_head"
     - "embed_tokens"
 
-
 training:
-  # Only 10 optimizer steps in the smoke run.
   max_steps: 10
-
   train_batch_size: 1
-
   eval_batch_size: 1
-
   gradient_accumulation_steps: 4
-
   learning_rate: 0.0002
-
   warmup_ratio: 0.03
-
   weight_decay: 0.0
-
   gradient_checkpointing: true
-
-  # Memory-friendly bitsandbytes optimizer.
   optimizer: "paged_adamw_8bit"
-
   logging_steps: 1
-
   evaluation_steps: 5
-
   save_steps: 5
-
   save_total_limit: 2
-
 
 evaluation:
   primary_metric: "chrfpp"
-
   compute_bleu: true
-
   compute_copy_metrics: true
-
-  # Small for smoke testing.
   bootstrap_samples: 200
-
   dev_generation_samples: 20
-
   test_generation_samples: 20
-
 
 preflight:
   minimum_python: "3.10"
-
   minimum_torch: "2.6"
-
   minimum_transformers: "5.12"
-
-  # Allows a standard free-Colab T4.
   minimum_vram_gib: 14.0
-
-  # Model cache itself is large.
   minimum_disk_free_gib: 25.0
-
   require_cuda: true
-
   check_bodhan_access: true
-
   check_bitsandbytes_nf4: true
