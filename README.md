@@ -216,14 +216,4 @@ bodhan-bhili-mt/<run_id>/
 
 Data, checkpoints, adapters, tokens and model caches are excluded from Git.
 
-### Limitations and future work
 
-- Evaluation uses automatic metrics on 300 of the 1,400 test sentences; there is no human evaluation.
-- Retention of the base model's other translation directions was not measured.
-- The model class and prompt format are Bodhan-specific and the config accepts only the Bhili → Marathi direction; making these configurable would let the same pipeline fine-tune other models and language pairs.
-- Package versions are constrained by ranges, not pinned to one verified Colab environment.
-
-### Acknowledgements
-
-- Base model: [Bodhan AI Indic-Translate](https://huggingface.co/bodhan-ai/indic-translate).
-- Data: Dehwali Bhili ↔ Marathi translation dataset, AIKosh (Project Astitva). Use it under the terms published on AIKosh.
