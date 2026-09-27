@@ -15,6 +15,7 @@ from bodhan_bhili.training import (
     quarantine_checkpoints,
     read_best_metric,
     save_best_adapter,
+    snapshot_adapter,
     verify_resume_fingerprint,
     warmup_steps,
 )
@@ -149,6 +150,90 @@ def test_checkpoint_frequency_change_allows_resume(tmp_path):
     config.training.logging_steps = 1
 
     verify_resume_fingerprint(fingerprint_file, make_fingerprint(config))
+
+
+def write_fingerprint(tmp_path, config):
+    """Persist the fingerprint of `config` and return its path."""
+    fingerprint_file = tmp_path / "training_fingerprint.json"
+    fingerprint_file.write_text(json.dumps(make_fingerprint(config)), encoding="utf-8")
+
+    return fingerprint_file
+
+
+def test_max_steps_change_requires_extend_flag(tmp_path):
+    """Raising max_steps without --extend is refused with a hint."""
+    config = load_config("configs/colab_t4.yaml")
+    config.training.max_steps = 700
+    fingerprint_file = write_fingerprint(tmp_path, config)
+    config.training.max_steps = 1400
+
+    with pytest.raises(RuntimeError, match="pass --extend"):
+        verify_resume_fingerprint(fingerprint_file, make_fingerprint(config))
+
+
+def test_extend_allows_larger_max_steps(tmp_path):
+    """--extend returns the previous max_steps when only max_steps grew."""
+    config = load_config("configs/colab_t4.yaml")
+    config.training.max_steps = 700
+    fingerprint_file = write_fingerprint(tmp_path, config)
+    config.training.max_steps = 1400
+
+    extended_from = verify_resume_fingerprint(
+        fingerprint_file, make_fingerprint(config), allow_extension=True
+    )
+
+    assert extended_from == 700
+
+
+def test_extend_with_unchanged_max_steps_is_a_normal_resume(tmp_path):
+    """Passing --extend again after the extension started is harmless."""
+    config = load_config("configs/colab_t4.yaml")
+    fingerprint_file = write_fingerprint(tmp_path, config)
+
+    assert (
+        verify_resume_fingerprint(fingerprint_file, make_fingerprint(config), allow_extension=True)
+        is None
+    )
+
+
+def test_extend_refuses_fewer_steps(tmp_path):
+    """Extension cannot shorten a run."""
+    config = load_config("configs/colab_t4.yaml")
+    config.training.max_steps = 700
+    fingerprint_file = write_fingerprint(tmp_path, config)
+    config.training.max_steps = 500
+
+    with pytest.raises(RuntimeError, match="can only increase"):
+        verify_resume_fingerprint(fingerprint_file, make_fingerprint(config), allow_extension=True)
+
+
+def test_extend_still_blocks_other_changes(tmp_path):
+    """--extend must not smuggle in a different learning rate."""
+    config = load_config("configs/colab_t4.yaml")
+    config.training.max_steps = 700
+    fingerprint_file = write_fingerprint(tmp_path, config)
+    config.training.max_steps = 1400
+    config.training.learning_rate = 1e-4
+
+    with pytest.raises(RuntimeError, match=r"Changed: \['training'\]"):
+        verify_resume_fingerprint(fingerprint_file, make_fingerprint(config), allow_extension=True)
+
+
+def test_snapshot_adapter_copies_once(tmp_path):
+    """The pre-extension adapter is preserved and never overwritten."""
+    checkpoint = make_checkpoint(tmp_path / "trainer", 700)
+    destination = tmp_path / "adapter_step_700"
+
+    assert snapshot_adapter(checkpoint, destination) is True
+    assert sorted(path.name for path in destination.iterdir()) == [
+        "adapter_config.json",
+        "adapter_model.safetensors",
+    ]
+
+    (checkpoint / "adapter_model.safetensors").write_bytes(b"changed")
+
+    assert snapshot_adapter(checkpoint, destination) is False
+    assert (destination / "adapter_model.safetensors").read_bytes() == b"x"
 
 
 def test_missing_fingerprint_blocks_resume(tmp_path):

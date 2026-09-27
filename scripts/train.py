@@ -37,6 +37,7 @@ from bodhan_bhili.training import (
     pad_training_batch,
     quarantine_checkpoints,
     read_best_metric,
+    snapshot_adapter,
     to_training_feature,
     verify_resume_fingerprint,
     warmup_steps,
@@ -55,6 +56,14 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="configs/colab_t4.yaml",
         help=("Experiment YAML configuration. Use the SAME config as prepare_data."),
+    )
+
+    parser.add_argument(
+        "--extend",
+        action="store_true",
+        help=(
+            "Continue a finished run after raising training.max_steps. No other setting may change."
+        ),
     )
 
     return parser.parse_args()
@@ -193,9 +202,44 @@ def main() -> int:
         for moved in quarantine_checkpoints(incomplete, paths.incomplete_checkpoints):
             logger.warning("Moved incomplete checkpoint aside: %s", moved)
 
+        extended_from = None
+
         if resume_from is not None:
-            verify_resume_fingerprint(paths.training_fingerprint, fingerprint)
+            extended_from = verify_resume_fingerprint(
+                paths.training_fingerprint, fingerprint, allow_extension=args.extend
+            )
             resume_info = describe_checkpoint(resume_from)
+
+            if resume_info["global_step"] >= config.training.max_steps:
+                logger.info(
+                    "Training already completed at %s (max_steps=%d). Nothing to do. "
+                    "To train longer, raise training.max_steps and pass --extend.",
+                    resume_from.name,
+                    config.training.max_steps,
+                )
+                return 0
+
+            if extended_from is not None:
+                snapshot = paths.checkpoints / f"adapter_step_{resume_info['global_step']}"
+
+                if snapshot_adapter(resume_from, snapshot):
+                    logger.info("Preserved pre-extension adapter: %s", snapshot)
+
+                atomic_write_json(fingerprint, paths.training_fingerprint)
+                manifest.setdefault("training_extensions", []).append(
+                    {
+                        "from_max_steps": extended_from,
+                        "to_max_steps": config.training.max_steps,
+                        "resumed_from": resume_from.name,
+                        "preserved_adapter": str(snapshot),
+                    }
+                )
+                logger.info(
+                    "Extending training: max_steps %d -> %d.",
+                    extended_from,
+                    config.training.max_steps,
+                )
+
             logger.info(
                 "Resuming from %s (step %s/%s).",
                 resume_from.name,
@@ -291,6 +335,7 @@ def main() -> int:
         training_report = {
             "status": "completed",
             "resumed_from": (str(resume_from) if resume_from is not None else None),
+            "extended_from_max_steps": extended_from,
             "global_step": trainer.state.global_step,
             "max_steps": config.training.max_steps,
             "train_metrics": train_output.metrics,

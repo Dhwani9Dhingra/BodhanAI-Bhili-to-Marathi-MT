@@ -122,6 +122,8 @@ Run full training with the same config used for `prepare_data`:
 
 Training saves a checkpoint to `checkpoints/trainer/` on Drive every `save_steps` optimizer steps, keeping the newest `save_total_limit`. Each checkpoint holds the LoRA adapter, optimizer, scheduler, RNG state, and step count. If the runtime disconnects, mount Drive, reinstall, and rerun the same command: it resumes from the newest complete checkpoint. Checkpoints missing files (an interrupted save or unfinished Drive sync) are moved to `checkpoints/trainer_incomplete/`. Resuming is refused if the prepared data or training hyperparameters changed since the first checkpoint; save, evaluation, and logging frequencies may change freely. Dev loss is computed on `eval_examples` dev rows every `evaluation_steps`, and the lowest-loss adapter is exported to `adapter_best/`.
 
+Rerunning a finished run does nothing. To train a finished run longer, raise only `training.max_steps` and pass `--extend`: training continues from the newest checkpoint with its optimizer state and data order (so new steps see examples not yet trained on), and the learning rate follows the longer schedule. The adapter being extended is first copied to `checkpoints/adapter_step_<step>/` so checkpoint rotation cannot delete it. The first extended step runs at the old schedule's final learning rate (zero), a Trainer resume quirk.
+
 ## Drive artifact layout
 
 ```text

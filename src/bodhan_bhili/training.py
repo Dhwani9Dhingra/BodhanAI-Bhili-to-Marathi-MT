@@ -138,8 +138,22 @@ def fingerprint_differences(saved: dict[str, Any], current: dict[str, Any]) -> l
     return [key for key in keys if saved.get(key) != current.get(key)]
 
 
-def verify_resume_fingerprint(fingerprint_file: Path, current: dict[str, Any]) -> None:
-    """Refuse to resume a run whose data or hyperparameters have changed."""
+def _without_max_steps(fingerprint: dict[str, Any]) -> dict[str, Any]:
+    """Copy a fingerprint with training.max_steps removed."""
+    training = dict(fingerprint.get("training") or {})
+    training.pop("max_steps", None)
+
+    return {**fingerprint, "training": training}
+
+
+def verify_resume_fingerprint(
+    fingerprint_file: Path, current: dict[str, Any], *, allow_extension: bool = False
+) -> int | None:
+    """Refuse to resume a run whose data or hyperparameters have changed.
+
+    With `allow_extension`, training.max_steps may increase (and nothing else may change).
+    Returns the previous max_steps when the run is being extended, otherwise None.
+    """
     if not fingerprint_file.exists():
         raise RuntimeError(
             "Checkpoints exist but the training fingerprint is missing: "
@@ -148,14 +162,57 @@ def verify_resume_fingerprint(fingerprint_file: Path, current: dict[str, Any]) -
         )
 
     saved = read_json(fingerprint_file)
-    differences = fingerprint_differences(saved, current)
+    saved_max_steps = (saved.get("training") or {}).get("max_steps")
+    current_max_steps = current["training"]["max_steps"]
+    extending = allow_extension and saved_max_steps != current_max_steps
+
+    if extending:
+        if saved_max_steps is None or current_max_steps < saved_max_steps:
+            raise RuntimeError(
+                f"--extend can only increase max_steps (saved: {saved_max_steps}, "
+                f"requested: {current_max_steps})."
+            )
+
+        differences = fingerprint_differences(
+            _without_max_steps(saved), _without_max_steps(current)
+        )
+
+    else:
+        differences = fingerprint_differences(saved, current)
 
     if differences:
+        hint = (
+            " To train longer, raise only training.max_steps and pass --extend."
+            if differences == ["training"] and not allow_extension
+            else ""
+        )
         raise RuntimeError(
             "Refusing to resume: the configuration or prepared data changed since these "
             f"checkpoints were written. Changed: {differences}. "
-            "Restore the original settings, or use a new run_id to start fresh."
+            "Restore the original settings, or use a new run_id to start fresh." + hint
         )
+
+    return saved_max_steps if extending else None
+
+
+def snapshot_adapter(checkpoint: Path, destination: Path) -> bool:
+    """Copy a checkpoint's adapter so checkpoint rotation cannot delete it."""
+    if (destination / "adapter_model.safetensors").exists():
+        return False
+
+    staging = destination.with_name(destination.name + ".tmp")
+
+    if staging.exists():
+        shutil.rmtree(staging)
+
+    staging.mkdir(parents=True)
+
+    for name in ("adapter_config.json", "adapter_model.safetensors"):
+        shutil.copy2(checkpoint / name, staging / name)
+
+    staging.rename(destination)
+
+    return True
 
 
 def warmup_steps(config: ExperimentConfig) -> int:
