@@ -183,6 +183,9 @@ def test_report_scores_compares_and_packages(monkeypatch, tmp_path):
     (adapter / "adapter_model.safetensors").write_bytes(b"x")
     _write_system(paths, "base", {s["record_id"]: s["source"] for s in sentences})
     _write_system(paths, "tuned", {s["record_id"]: s["target"] for s in sentences}, str(adapter))
+    _write_system(
+        paths, "tuned_700", {s["record_id"]: s["target"][:-4] for s in sentences}, str(adapter)
+    )
 
     monkeypatch.setattr(sys, "argv", ["evaluate", "report"])
     assert evaluate.main() == 0
@@ -194,6 +197,8 @@ def test_report_scores_compares_and_packages(monkeypatch, tmp_path):
     assert report["systems"]["base"]["exact_copy_rate"] == 1.0
     assert report["systems"]["copy_source"]["chrfpp"] == report["systems"]["base"]["chrfpp"]
     assert report["significance"]["tuned"]["observed_delta"] > 0
+    assert set(report["significance_tuned_vs"]) == {"tuned_700"}
+    assert report["significance_tuned_vs"]["tuned_700"]["observed_delta"] > 0
     assert (paths.evaluation / "most_improved.csv").exists()
     assert (paths.evaluation / "test_predictions.csv").exists()
     assert (paths.run_root / "package" / "adapter" / "adapter_model.safetensors").exists()

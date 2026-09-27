@@ -427,6 +427,22 @@ def run_report(args, config, paths: ArtifactPaths, logger, state: RunStateTracke
                 seed=config.project.seed,
             )
 
+    # The packaged system against every other adapter, e.g. final vs. mid-training.
+    primary_vs_others = {}
+
+    if PRIMARY_SYSTEM in systems:
+        for system in systems:
+            if system in (BASE_SYSTEM, PRIMARY_SYSTEM):
+                continue
+
+            primary_vs_others[system] = paired_bootstrap_chrf(
+                frame[f"prediction_{system}"].tolist(),
+                frame[f"prediction_{PRIMARY_SYSTEM}"].tolist(),
+                references,
+                samples=config.evaluation.bootstrap_samples,
+                seed=config.project.seed,
+            )
+
     frame["source_words"] = frame["source"].str.split().str.len()
     frame["length_bucket"] = frame["source_words"].map(length_bucket)
     by_length = {}
@@ -472,6 +488,7 @@ def run_report(args, config, paths: ArtifactPaths, logger, state: RunStateTracke
         "max_new_tokens": sorted({meta.get("max_new_tokens") for meta in settings.values()}),
         "systems": metrics,
         "significance": significance,
+        f"significance_{PRIMARY_SYSTEM}_vs": primary_vs_others,
         "by_source_length": by_length,
         "generation_settings": settings,
         "training": {
@@ -505,6 +522,17 @@ def run_report(args, config, paths: ArtifactPaths, logger, state: RunStateTracke
     for system, result in significance.items():
         logger.info(
             "%s vs base: chrF++ %+.2f (95%% CI %+.2f to %+.2f, p=%s)",
+            system,
+            result["observed_delta"],
+            result["ci95_low"],
+            result["ci95_high"],
+            result["p_value"],
+        )
+
+    for system, result in primary_vs_others.items():
+        logger.info(
+            "%s vs %s: chrF++ %+.2f (95%% CI %+.2f to %+.2f, p=%s)",
+            PRIMARY_SYSTEM,
             system,
             result["observed_delta"],
             result["ci95_low"],
