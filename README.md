@@ -1,184 +1,229 @@
-# Bodhan Indic-Translate: Dehwali Bhili to Marathi
+# Fine-Tuning Bodhan Indic-Translate for Dehwali Bhili → Marathi
 
-Adapt `bodhan-ai/indic-translate` with 4-bit QLoRA for Dehwali Bhili to Marathi translation. The laptop handles development and data preparation; Google Colab handles GPU work. Google Drive stores experiment artifacts for later analysis and a future dashboard.
+Fine-tuning the Bodhan AI machine-translation model [`bodhan-ai/indic-translate`](https://huggingface.co/bodhan-ai/indic-translate) to translate **Dehwali Bhili into Marathi** with **QLoRA**.
 
-## Current status
+**Results dashboard:** [open the public dashboard](https://htmlpreview.github.io/?https://github.com/Dhwani9Dhingra/BodhanAI-Bhili-to-Marathi-MT/blob/main/Dashboard_public.html) (metrics, training curves, adapter statistics and 5 example sentences). The file is [`Dashboard_public.html`](Dashboard_public.html).
 
-Implemented:
+---
 
-- Configuration validation, environment checks, logging, and run metadata.
-- Quote-aware TSV loading, text cleaning, grouped splits, leakage checks, and dataset hashes.
-- Translation prompts, completion-only labels, LoRA module selection, and a GPU smoke test that saves and reloads an adapter.
-- CPU unit tests for configuration, paths, data preparation, prompts, masking, and run state.
+## 1. Project overview
 
-- Resumable QLoRA training (`scripts.train`) with Drive checkpoints and best-dev-loss adapter export.
+Dehwali Bhili is written in the same Devanagari script as Marathi but is a different language, and it has very little parallel data. Out of the box, Bodhan Indic-Translate mostly returns Bhili input unchanged instead of translating it. This project adapts the model to the Bhili → Marathi direction.
 
-- Resumable test evaluation (`scripts.evaluate`): base and tuned translations, chrF++/BLEU/copy metrics, paired bootstrap significance, length analysis, and Drive packaging.
+| | |
+| --- | --- |
+| Base model | `bodhan-ai/indic-translate` (5.74B parameters, image-text-to-text architecture) |
+| Method | QLoRA: frozen base loaded in 4-bit NF4 with double quantization; LoRA adapters (rank 8, alpha 16, dropout 0.05) trained in fp32 on the language layers only |
+| Trainable parameters | 19.4M (0.34%), in 343 adapted modules; the saved adapter is 77.9 MB |
+| Data | Dehwali Bhili ↔ Marathi translation corpus (AIKosh, Project Astitva): 14,737 raw pairs → 13,995 after cleaning |
+| Split | 11,195 train / 1,400 dev / 1,400 test, grouped by source ID so no group appears in two splits |
+| Training | 1,400 optimizer steps (one pass over the training data), effective batch 8, learning rate 2e-4 |
+| Hardware | One Tesla T4 (free Colab), about 6.7 hours of training across several resumed sessions |
+| Evaluation | 300 held-out test sentences, chrF++ (primary), BLEU, copy rate, paired bootstrap confidence intervals |
 
-Retention evaluation (other translation directions) and the dashboard are still pending.
+The pipeline is built as separate, resumable stages (preflight, data preparation, training, evaluation, reporting) that write all outputs and their status to one run folder on Google Drive, so a Colab disconnect never loses more than the last few minutes of work.
 
-## Repository layout
+## 2. Results and insights
 
-```text
-configs/                 Smoke and T4 experiment settings
-requirements/            Laptop and Colab installation entry points
-scripts/                 One command per implemented stage
-src/bodhan_bhili/
-    core/                Configuration, paths, logging, state, and preflight
-    data.py              CPU data preparation
-    model.py             Model loading, translation, and QLoRA utilities
-    training.py          Checkpoint discovery, resume guard, batching, callbacks
-tests/unit/              CPU unit tests
+All systems translate the same 300 held-out test sentences. `Copy input` is a reference point: the Bhili sentence returned unchanged.
+
+| System | chrF++ | BLEU | Output identical to input | Δ chrF++ vs base (95% CI) |
+| --- | ---: | ---: | ---: | --- |
+| Copy input (reference point) | 35.00 | 8.72 | 100% | — |
+| Base model (before fine-tuning) | 37.22 | 11.71 | 59.0% | — |
+| Fine-tuned, 700 steps (50% of data) | 58.86 | 33.96 | 0% | +21.63 (+20.23 to +23.22) |
+| **Fine-tuned, 1,400 steps (100% of data)** | **60.08** | **35.25** | **0%** | **+22.86 (+21.33 to +24.56)** |
+
+Confidence intervals come from 1,000 paired bootstrap resamples (p = 0.001 for both fine-tuned systems vs base).
+
+**Insights**
+
+- **The base model barely translated Bhili.** It returned the input unchanged for 177 of 300 sentences, scoring only 2.2 chrF++ above plain copying. Because the two languages share script and many words, copying alone already earns 35 chrF++, which is why the copy baseline is reported.
+- **Fine-tuning fixed the main failure.** The fine-tuned model copies no inputs and scores +22.9 chrF++ and +23.5 BLEU over the base model. Sentences scoring below 30 chrF++ fell from 121 to 29; sentences scoring 80 or above rose from 5 to 62.
+- **Most of the gain came from the first half of the data.** 700 steps gave +21.6 chrF++; the second 700 steps added +1.23 more (95% CI +0.40 to +2.09, p = 0.002): small but statistically reliable. Eval loss fell from 1.063 (step 50) to 0.800 (step 700) to 0.760 (step 1,400) with no sign of overfitting.
+- **Many remaining low scores reflect the references.** Where the human translation is much longer than the Bhili sentence (51 test sentences), the final model averages 43.0 chrF++ against 64.2 where lengths match: those references are often paraphrases that add content.
+- **The adapter changed the feed-forward layers most in total**, but per weight the largest change is in the model's per-layer projection modules; attention modules changed least.
+
+## 3. Workflow
+
+```mermaid
+flowchart TD
+    A[Raw AIKosh TSV<br/>14,737 Bhili-Marathi pairs] --> B[Preflight<br/>Python, CUDA, NF4, disk, HF token, model access]
+    B --> C[Data preparation<br/>clean, deduplicate, grouped split,<br/>leakage checks, freeze test hash]
+    C --> D[Smoke tests<br/>10-step QLoRA run, interrupt + resume check]
+    D --> E[QLoRA training on T4<br/>4-bit NF4 base + LoRA adapters<br/>checkpoint to Drive every 25 steps]
+    E -->|Colab disconnect| E
+    E --> F[Adapters<br/>700 steps and 1,400 steps]
+    F --> G[Evaluation<br/>base, 700-step and 1,400-step models<br/>translate 300 test sentences]
+    G --> H[Report<br/>chrF++, BLEU, copy rate,<br/>paired bootstrap significance]
+    H --> I[Package + dashboard<br/>adapter, model card, Dashboard.html]
 ```
 
-Dependencies are declared in `pyproject.toml`. The requirement files select the appropriate extras. Raw data, credentials, model caches, and generated artifacts are excluded from Git.
+Every stage records its status in `reports/run_state.json`. Training and evaluation both resume from where they stopped: training from the newest complete checkpoint, evaluation from the last saved batch of translations.
 
-## Laptop setup
+## 4. Tech stack
 
-Use Python 3.10 or newer. Run commands from the repository root:
+| Area | Tools |
+| --- | --- |
+| Language | Python 3.10+ (Colab ran 3.13) |
+| Model and training | PyTorch, Hugging Face Transformers (Trainer), PEFT (LoRA), bitsandbytes (4-bit NF4, paged 8-bit AdamW), Accelerate |
+| Data | pandas, NumPy, Hugging Face Hub |
+| Evaluation | SacreBLEU (chrF++, BLEU), paired bootstrap resampling |
+| Configuration | YAML configs validated with Pydantic |
+| Tracking | JSON reports, run-state file, TensorBoard, pipeline log |
+| Compute and storage | Google Colab (Tesla T4), Google Drive for all artifacts |
+| Dashboard | Self-contained HTML generated by `scripts/dashboard.py` |
+| Quality | pytest (CPU unit tests), Ruff (lint and format) |
+
+## 5. How to run
+
+Training and evaluation need a CUDA GPU (the base model is loaded in 4-bit with bitsandbytes), so they run on Colab. A laptop is enough for development, unit tests, data preparation and building the dashboard.
+
+### Before you start
+
+1. Accept the model's terms on its [Hugging Face page](https://huggingface.co/bodhan-ai/indic-translate) and create a read token.
+2. Download the Dehwali Bhili ↔ Marathi TSV from AIKosh and upload it to your Google Drive, for example `MyDrive/BodhanAI/data/Dehwali_Bhili_Translation_15k_pipeline.tsv`.
+
+### On Google Colab (full pipeline)
+
+The notebook [`notebook/Fine_Tuning.ipynb`](notebook/Fine_Tuning.ipynb) contains every step in order. In short:
+
+1. Runtime → Change runtime type → **T4 GPU**. Add your token to Colab Secrets (key icon) as `HF_TOKEN`.
+2. Mount Drive, clone, install:
+   ```python
+   from google.colab import drive
+   drive.mount("/content/drive")
+
+   %cd /content
+   !git clone https://github.com/Dhwani9Dhingra/BodhanAI-Bhili-to-Marathi-MT.git
+   %cd /content/BodhanAI-Bhili-to-Marathi-MT
+   !pip install -r requirements/colab.txt
+   ```
+3. Set the token:
+   ```python
+   import os
+   from google.colab import userdata
+   os.environ["HF_TOKEN"] = userdata.get("HF_TOKEN")
+   os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+   ```
+4. Check the environment and prepare the data:
+   ```python
+   !python -m scripts.preflight --config configs/colab_t4.yaml
+   !python -m scripts.prepare_data --config configs/colab_t4.yaml \
+       --data "/content/drive/MyDrive/BodhanAI/data/Dehwali_Bhili_Translation_15k_pipeline.tsv"
+   ```
+5. Optional smoke test of training, including an interrupt and resume: run the same two commands with `configs/smoke.yaml`, then `!python -m scripts.train --config configs/smoke.yaml`.
+6. Train (resumable; re-run the same command after a disconnect):
+   ```python
+   !python -m scripts.train --config configs/colab_t4.yaml
+   ```
+7. Evaluate and report:
+   ```python
+   !python -m scripts.evaluate generate --config configs/colab_t4.yaml --system base
+   !python -m scripts.evaluate generate --config configs/colab_t4.yaml --system tuned
+   !python -m scripts.evaluate report --config configs/colab_t4.yaml
+   ```
+8. Flush Drive before closing the tab, so unsynced checkpoints are not lost:
+   ```python
+   drive.flush_and_unmount()
+   ```
+
+Results are written to `MyDrive/BodhanAI/artifacts/bodhan-bhili-mt/bhili_marathi_t4_v1/`.
+
+### On a local machine (development, tests, dashboard)
 
 ```powershell
+git clone https://github.com/Dhwani9Dhingra/BodhanAI-Bhili-to-Marathi-MT.git
+cd BodhanAI-Bhili-to-Marathi-MT
 py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements/dev.txt
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\ruff.exe check src scripts tests
-.\.venv\Scripts\ruff.exe format --check src scripts tests
 ```
 
-For data preparation, set the artifact root to your actual Google Drive synced folder. The drive letter below is an example; replace it with your own location.
+On macOS or Linux use `python3 -m venv .venv` and `.venv/bin/python`.
+
+Prepare data locally (point the artifact root at a Google Drive synced folder so Colab can use it):
 
 ```powershell
-$env:BODHAN_ARTIFACT_ROOT = 'G:/My Drive/BodhanAI/artifacts'
-$env:BODHAN_DATA_FILE = 'C:/path/to/Dehwali_Bhili_Translation_15k_pipeline.tsv'
-$env:BODHAN_RUN_ID = 'smoke_001'
-.\.venv\Scripts\python.exe -m scripts.prepare_data --config configs/smoke.yaml
+$env:BODHAN_ARTIFACT_ROOT = "G:/My Drive/BodhanAI/artifacts"
+.\.venv\Scripts\python.exe -m scripts.prepare_data --config configs/colab_t4.yaml --data "C:/path/to/Dehwali_Bhili_Translation_15k_pipeline.tsv"
 ```
 
-Wait for Drive to finish syncing before opening the same run in Colab. CPU tests use temporary directories and do not need Drive or a GPU.
+Build the dashboard from a downloaded run folder (`safetensors` is needed for the adapter statistics):
 
-## Colab setup
-
-Select a GPU runtime. Clone or upload the repository to Colab's local disk, then change to its root with `%cd`. Accept the model's access terms on Hugging Face and add a read token named `HF_TOKEN` to Colab Secrets.
-
-Run this notebook cell before any pipeline command:
-
-```python
-import os
-from google.colab import drive, userdata
-
-drive.mount('/content/drive')
-os.environ['HF_TOKEN'] = userdata.get('HF_TOKEN')
-os.environ['BODHAN_ARTIFACT_ROOT'] = '/content/drive/MyDrive/BodhanAI/artifacts'
-os.environ['BODHAN_HF_CACHE'] = '/content/hf_cache'
-os.environ['BODHAN_RUN_ID'] = 'smoke_001'
+```powershell
+.\.venv\Scripts\python.exe -m pip install safetensors numpy
+.\.venv\Scripts\python.exe -m scripts.dashboard --run-dir "<path to>/bhili_marathi_t4_v1" --output Dashboard.html
+# public copy with only 5 example sentences
+.\.venv\Scripts\python.exe -m scripts.dashboard --run-dir "<path to>/bhili_marathi_t4_v1" --output Dashboard_public.html --max-sentences 5
 ```
 
-Install the Colab dependencies from the repository root:
+---
 
-```python
-%pip install -r requirements/colab.txt
+## Reference
+
+### Repository layout
+
+```text
+configs/                 colab_t4.yaml (main run), smoke.yaml (10-step test run)
+notebook/                Fine_Tuning.ipynb: the Colab workflow, cell by cell
+requirements/            colab.txt (training + dev), dev.txt (laptop)
+scripts/                 One command per stage: preflight, prepare_data, smoke_model,
+                         train, evaluate, dashboard
+src/bodhan_bhili/
+    core/                Configuration, paths, logging, run state, preflight checks
+    data.py              Cleaning, grouped splits, leakage checks, hashes
+    model.py             Model loading, prompts, completion-only labels, QLoRA setup
+    training.py          Checkpoint discovery, resume guard, batching, callbacks
+    evaluation.py        Resumable generation, metrics, bootstrap significance
+tests/unit/              CPU unit tests (no GPU or Drive needed)
+Dashboard_public.html    Public results dashboard (5 example sentences)
 ```
 
-The default artifact path in both configs is on Google Drive. Scripts refuse to create that path if Drive is not mounted. Model downloads remain on Colab's temporary disk; only adapters and experiment outputs belong in the artifact directory.
+### Resuming and extending training
 
-Environment overrides:
+`scripts.train` saves a checkpoint (adapter, optimizer, scheduler, RNG state, step count) every `save_steps` steps and keeps the newest `save_total_limit`. Re-running the command resumes from the newest complete checkpoint; incomplete ones (an interrupted save or unfinished Drive sync) are moved to `checkpoints/trainer_incomplete/`. Resuming is refused if the prepared data or training settings changed. Re-running a finished run does nothing. To train a finished run longer, raise only `training.max_steps` and pass `--extend`; the adapter being extended is first copied to `checkpoints/adapter_step_<step>/`. This project trained 700 steps first and was then extended to 1,400 this way.
+
+### Evaluation options
+
+`--system NAME --adapter PATH` scores any adapter under its own name (for example `--system tuned_700 --adapter checkpoints/adapter_step_701`). `--limit 5` translates only the first five sampled sentences as a quick check; a later full run reuses them. Generation is greedy with `--max-new-tokens 256` and `--batch-size 8` (halved automatically on out-of-memory). `report` scores every system plus the copy baseline and writes `reports/evaluation_report.json`, `evaluation/test_predictions.csv`, `most_improved.csv`, `most_regressed.csv` and, when `tuned` is complete, a `package/` folder with the adapter, processor and a model card.
+
+### Environment variables
 
 | Variable | Purpose |
 | --- | --- |
-| `BODHAN_ARTIFACT_ROOT` | Drive directory containing all experiment runs |
-| `BODHAN_DATA_FILE` | Raw AIKosh TSV location |
-| `BODHAN_HF_CACHE` | Temporary model download cache |
-| `BODHAN_RUN_ID` | Run folder shared by the stages of one experiment |
-| `HF_TOKEN` | Hugging Face access token |
+| `HF_TOKEN` | Hugging Face read token (use Colab Secrets; never commit it) |
+| `BODHAN_ARTIFACT_ROOT` | Drive folder that holds all runs |
+| `BODHAN_DATA_FILE` | Raw TSV location (alternative to `--data`) |
+| `BODHAN_HF_CACHE` | Model download cache |
+| `BODHAN_RUN_ID` | Overrides the run ID in the config |
 
-`.env.example` lists these variables. Scripts do not automatically load `.env` files.
+`.env.example` lists them; scripts read the environment and do not load `.env` files.
 
-## Stage commands
-
-Run preflight in Colab:
-
-```python
-!python -m scripts.preflight --config configs/smoke.yaml
-```
-
-If you already prepared `smoke_001` on the laptop and synced it to Drive, use those files. Otherwise, upload the raw TSV to Drive, set its path, and prepare it in Colab:
-
-```python
-os.environ['BODHAN_DATA_FILE'] = '/content/drive/MyDrive/BodhanAI/data/raw/Dehwali_Bhili_Translation_15k_pipeline.tsv'
-!python -m scripts.prepare_data --config configs/smoke.yaml
-```
-
-Run the model smoke test:
-
-```python
-!python -m scripts.smoke_model --config configs/smoke.yaml --steps 3
-```
-
-Use the same config and run ID for stages that share prepared data. Rerunning a stage can replace its outputs, so choose a new run ID for a separate experiment. The smoke script defaults to at most three optimizer steps unless `--steps` is supplied.
-
-Run full training with the same config used for `prepare_data`:
-
-```python
-!python -m scripts.train --config configs/colab_t4.yaml
-```
-
-Training saves a checkpoint to `checkpoints/trainer/` on Drive every `save_steps` optimizer steps, keeping the newest `save_total_limit`. Each checkpoint holds the LoRA adapter, optimizer, scheduler, RNG state, and step count. If the runtime disconnects, mount Drive, reinstall, and rerun the same command: it resumes from the newest complete checkpoint. Checkpoints missing files (an interrupted save or unfinished Drive sync) are moved to `checkpoints/trainer_incomplete/`. Resuming is refused if the prepared data or training hyperparameters changed since the first checkpoint; save, evaluation, and logging frequencies may change freely. Dev loss is computed on `eval_examples` dev rows every `evaluation_steps`, and the lowest-loss adapter is exported to `adapter_best/`.
-
-Rerunning a finished run does nothing. To train a finished run longer, raise only `training.max_steps` and pass `--extend`: training continues from the newest checkpoint with its optimizer state and data order (so new steps see examples not yet trained on), and the learning rate follows the longer schedule. The adapter being extended is first copied to `checkpoints/adapter_step_<step>/` so checkpoint rotation cannot delete it. The first extended step runs at the old schedule's final learning rate (zero), a Trainer resume quirk.
-
-## Evaluation
-
-Each system translates the same `evaluation.test_generation_samples` sentences drawn (with the project seed) from the frozen test split, whose hash is checked first. Predictions are appended to `evaluation/predictions_<system>.jsonl` batch by batch, so rerunning a command after a disconnect continues where it stopped.
-
-```python
-!python -m scripts.evaluate generate --config configs/colab_t4.yaml --system base
-!python -m scripts.evaluate generate --config configs/colab_t4.yaml --system tuned
-!python -m scripts.evaluate report --config configs/colab_t4.yaml
-```
-
-`tuned` uses `checkpoints/adapter_best` by default; any other adapter can be scored under its own name, for example `--system tuned_700 --adapter checkpoints/adapter_step_701`. `--limit 5` translates only the first five sampled sentences as a smoke test; a later full run reuses them. Generation is greedy with `--max-new-tokens 256` and `--batch-size 8` by default (a CUDA out-of-memory error halves the batch). A system's settings are fixed once its predictions exist.
-
-`report` scores every system plus a `copy_source` baseline (the Bhili input unchanged, since both languages use Devanagari), runs a paired bootstrap on chrF++ for each system against `base`, and writes `reports/evaluation_report.json`, `evaluation/test_predictions.csv`, `most_improved.csv`, and `most_regressed.csv`. When `tuned` is complete it also writes `package/` with the adapter, processor, report, and a model card. Prediction files are plain JSON lines, so a system generated in another Colab account can be copied into this run's `evaluation/` folder together with its `generation_<system>.json`.
-
-## Drive artifact layout
+### Run folder layout (on Drive)
 
 ```text
-BodhanAI/artifacts/bodhan-bhili-mt/<run_id>/
-    data/                train.tsv, dev.tsv, test.tsv
-    reports/             Config, manifest, state, data audit, hashes, smoke and training reports
-    logs/                pipeline.log
-    evaluation/          Smoke and test predictions, per-sentence scores
-    package/             Final adapter, processor, evaluation report, model card
-    checkpoints/
-        adapter_initial/ Adapter before smoke updates
-        adapter_final/   Final adapter and processor (smoke or training)
-        adapter_best/    Lowest dev-loss training adapter and best_metric.json
-        trainer/         Resumable checkpoint-<step>/ folders
-        trainer_incomplete/  Unusable checkpoints moved aside on resume
-    tensorboard/         Training event logs
+bodhan-bhili-mt/<run_id>/
+    data/          train.tsv, dev.tsv, test.tsv
+    reports/       config, run state, data audit, test hash, training and evaluation reports
+    logs/          pipeline.log
+    evaluation/    predictions per system, per-sentence scores
+    checkpoints/   trainer/ checkpoints, adapter_best/, adapter_final/, adapter_step_<N>/
+    package/       final adapter, processor, evaluation report, model card
+    tensorboard/   training event logs
 ```
 
-A future dashboard can read the JSON reports and CSV predictions directly from this run directory. Reports include split counts and hashes, cleaning reasons, run metadata, trainable parameter details, and smoke losses. Predictions retain record IDs, source text, references, and before/after outputs. Some folders remain empty until their stage is implemented.
+Data, checkpoints, adapters, tokens and model caches are excluded from Git.
 
-Existing local artifacts are not migrated automatically. Copy any run you want to retain into the same project/run layout on Drive before using it there. The cleanup preserves existing local files.
+### Limitations and future work
 
-## Decisions still to resolve
+- Evaluation uses automatic metrics on 300 of the 1,400 test sentences; there is no human evaluation.
+- Retention of the base model's other translation directions was not measured.
+- The model class and prompt format are Bodhan-specific and the config accepts only the Bhili → Marathi direction; making these configurable would let the same pipeline fine-tune other models and language pairs.
+- Package versions are constrained by ranges, not pinned to one verified Colab environment.
 
-- The saved data report records 11,195 train, 1,400 dev, and 1,400 test rows; the initial plan describes different counts and evaluation caps.
-- The smoke test currently samples the test split. Reserving that split for final evaluation requires a separate change.
-- Package versions are constrained by ranges, not pinned to a verified Colab environment.
+### Acknowledgements
 
-These experiment settings and behaviors were preserved during repository cleanup.
-
-## QLoRA memory fix
-
-QLoRA preparation now freezes the base weights at their loaded precision instead of using
-`prepare_model_for_kbit_training`, whose blanket fp32 conversion caused the T4 setup OOM.
-Only LoRA parameters are trainable and converted to fp32. Non-reentrant gradient checkpointing
-is enabled when configured, and each optimizer step checks for finite, nonzero adapter gradients.
-Rank, target modules, optimizer, and dataset settings are unchanged.
-
-The smoke test logs allocated/reserved GPU memory and process-wide peaks around model loading,
-adapter setup, training, and reload. These snapshots are also saved in `model_smoke_report.json`,
-including on failure. This removes the known upcast allocation; training still needs verification
-on Colab. Restart a runtime that has encountered an OOM before retrying with the updated code.
+- Base model: [Bodhan AI Indic-Translate](https://huggingface.co/bodhan-ai/indic-translate).
+- Data: Dehwali Bhili ↔ Marathi translation dataset, AIKosh (Project Astitva). Use it under the terms published on AIKosh.
