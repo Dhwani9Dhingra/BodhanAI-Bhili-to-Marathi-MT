@@ -1,0 +1,270 @@
+<title>Fine Tuning for Machine Translation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Noto+Sans+Devanagari:wght@400;600&display=swap">
+<style>
+:root {
+  --paper: #f5f7f6; --panel: #ffffff; --ink: #1c2b2a; --muted: #5a6a68; --line: #dfe6e4;
+  --before: #c2562f; --half: #b98518; --after: #0e7c6b; --copy: #8e9a98; --accent: #0e7c6b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #101716; --panel: #182220; --ink: #e5eeeb; --muted: #9dafab; --line: #2a3835;
+    --before: #ec8a63; --half: #e2b650; --after: #45c3aa; --copy: #7d8c89; --accent: #45c3aa;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #101716; --panel: #182220; --ink: #e5eeeb; --muted: #9dafab; --line: #2a3835;
+  --before: #ec8a63; --half: #e2b650; --after: #45c3aa; --copy: #7d8c89; --accent: #45c3aa;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink);
+  font: 16px/1.5 "Atkinson Hyperlegible", "Noto Sans Devanagari", system-ui, "Segoe UI", sans-serif; padding-inline: 16px; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-block: 28px 48px; }
+h1 { font-size: clamp(26px, 4vw, 34px); margin: 0 0 4px; text-wrap: balance; }
+.desc { color: var(--muted); margin: 0 0 18px; font-size: 17px; }
+.desc code { font-size: 15px; }
+nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 20px; overflow-x: auto;
+  position: sticky; top: env(safe-area-inset-top, 0px); background: var(--paper); z-index: 2; }
+nav button { font: inherit; background: none; border: 0; border-bottom: 3px solid transparent; color: var(--muted);
+  padding: 10px 14px; cursor: pointer; white-space: nowrap; }
+nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 700; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.two { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); margin-top: 14px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; overflow-x: auto; }
+.panel h3 { margin: 0 0 10px; font-size: 16px; }
+.tile .k { font-size: 14px; color: var(--muted); }
+.tile .v { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 2px 0; }
+.tile .d { font-size: 14px; color: var(--after); font-weight: 700; }
+.note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+table { width: 100%; border-collapse: collapse; font-size: 15px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 700; font-size: 14px; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+.bars { display: grid; gap: 10px; }
+.bar-row { display: grid; grid-template-columns: 130px 1fr 56px; gap: 10px; align-items: center; font-size: 14px; }
+.track { position: relative; height: 22px; background: color-mix(in srgb, var(--line) 60%, transparent); border-radius: 5px; }
+.fill { position: absolute; inset: 0 auto 0 0; border-radius: 5px; }
+.val { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 14px; color: var(--muted); margin-top: 8px; }
+.legend i { display: inline-block; width: 18px; height: 3px; vertical-align: 4px; margin-right: 6px; }
+svg text { fill: var(--muted); font-size: 12px; font-family: "Atkinson Hyperlegible", sans-serif; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.controls input, .controls select { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--ink); }
+.controls input { flex: 1 1 260px; }
+.sent { display: grid; gap: 6px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.sent .row { display: grid; grid-template-columns: 170px 1fr 56px; gap: 10px; font-family: "Noto Sans Devanagari", "Atkinson Hyperlegible", sans-serif; }
+.sent .who { font-family: "Atkinson Hyperlegible", sans-serif; font-size: 14px; font-weight: 700; color: var(--muted); }
+.sent .sc { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; font-family: "Atkinson Hyperlegible", sans-serif; }
+@media (max-width: 600px) {
+  .two { grid-template-columns: 1fr; }
+  .adapter-charts > .panel:last-child { order: -1; }
+  .sent .row { grid-template-columns: 1fr auto; }
+  .sent .row .who { grid-column: 1 / -1; }
+  .bar-row { grid-template-columns: 96px 1fr 52px; }
+}
+</style>
+
+<div class="wrap">
+  <h1>Fine Tuning for Machine Translation</h1>
+  <p class="desc" id="desc"></p>
+  <nav role="tablist" id="tabs">
+    <button role="tab" id="tab-metrics" aria-selected="true" data-panel="metrics">Metrics</button>
+    <button role="tab" id="tab-training" aria-selected="false" data-panel="training">Training</button>
+    <button role="tab" id="tab-adapter" aria-selected="false" data-panel="adapter">QLoRA adapter</button>
+    <button role="tab" id="tab-examples" aria-selected="false" data-panel="examples">Example sentences</button>
+  </nav>
+
+  <section id="metrics" role="tabpanel">
+    <div class="grid" id="tiles"></div>
+    <div class="panel" style="margin-top:14px">
+      <h3>Test-set comparison</h3>
+      <table id="metricTable"></table>
+      <p class="note" id="metricNote"></p>
+    </div>
+    <div class="two">
+      <div class="panel"><h3>chrF++ (primary metric, 0–100)</h3><div class="bars" id="chrfBars"></div></div>
+      <div class="panel"><h3>BLEU (secondary metric, 0–100)</h3><div class="bars" id="bleuBars"></div></div>
+    </div>
+  </section>
+
+  <section id="training" role="tabpanel" hidden>
+    <div class="grid" id="trainTiles"></div>
+    <div class="panel" style="margin-top:14px">
+      <h3>Training loss and eval loss</h3>
+      <div id="lossChart"></div>
+      <div class="legend"><span><i style="background:var(--copy)"></i>training loss (every 5 steps)</span><span><i style="background:var(--after);height:4px"></i>eval loss on dev set (every 50 steps)</span><span><i style="background:var(--half)"></i>step 700: mid-training checkpoint</span></div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <h3>Training loss and eval loss at each checkpoint</h3>
+      <table id="evalTable"></table>
+      <p class="note">Eval loss: measured on the dev set at each checkpoint. Training loss: average of the logged training losses over the 50 steps before the checkpoint (each logged value covers one 5-step window, so single values are noisy).</p>
+    </div>
+  </section>
+
+  <section id="adapter" role="tabpanel" hidden>
+    <div class="grid" id="loraTiles" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))"></div>
+    <div class="two adapter-charts">
+      <div class="panel">
+        <h3>Weight change learned by the final adapter, by module type</h3>
+        <div class="bars" id="loraBars"></div>
+        <p class="note">For each adapted layer the adapter adds ΔW = (α/r)·B·A to the frozen base weight. Each bar is the size of that change (Frobenius norm), combined over all layers of the same type. Large matrices get large totals. Before training B = 0, so ΔW = 0 everywhere.</p>
+      </div>
+      <div class="panel">
+        <h3>Average change per weight, by module type</h3>
+        <div class="bars" id="rmsBars"></div>
+        <p class="note">Each total divided by the square root of the number of weights it covers (root-mean-square change per weight), so module types of different sizes compare fairly. Values are ×10⁻⁴.</p>
+      </div>
+    </div>
+    <p class="note">Both charts computed from <code>checkpoints/adapter_best</code> (step 1400).</p>
+  </section>
+
+  <section id="examples" role="tabpanel" hidden>
+    <div class="controls">
+      <input id="search" type="search" placeholder="Search Bhili, reference or translation" aria-label="Search sentences">
+      <select id="sort" aria-label="Sort sentences">
+        <option value="gain">Largest improvement over base</option>
+        <option value="high">Highest fine-tuned score</option>
+        <option value="low">Lowest fine-tuned score</option>
+      </select>
+    </div>
+    <p class="note" id="count"></p>
+    <div id="sentences"></div>
+  </section>
+</div>
+
+<script>
+const D = __DATA__;
+const S = D.systems;
+const $ = (id) => document.getElementById(id);
+const f1 = (x) => Number(x).toFixed(1), f2 = (x) => Number(x).toFixed(2);
+const pct = (x) => (100 * x).toFixed(1) + "%";
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const NAME = { copy_source: "Copy input (reference point)", base: "Base model", tuned_700: "Fine-tuned, 700 steps", tuned: "Fine-tuned, 1400 steps" };
+const SHORT = { copy_source: "Copy input", base: "Base", tuned_700: "700 steps", tuned: "1400 steps" };
+const COLOR = { copy_source: "var(--copy)", base: "var(--before)", tuned_700: "var(--half)", tuned: "var(--after)" };
+const ORDER = ["copy_source", "base", "tuned_700", "tuned"].filter((s) => S[s]);
+const MODELS = ORDER.filter((s) => s !== "copy_source");
+const N = D.sentences;
+
+$("desc").innerHTML = `Fine-Tuning Bodhan AI model Indic-Translate (<code>${esc(D.model)}</code>) for Machine Translation (Dehwali Bhili → Marathi) using QLoRA`;
+
+// Tabs
+const tabs = [...document.querySelectorAll("nav button")];
+function openTab(id) {
+  tabs.forEach((b) => b.setAttribute("aria-selected", String(b.dataset.panel === id)));
+  document.querySelectorAll("section").forEach((s) => { s.hidden = s.id !== id; });
+}
+tabs.forEach((b) => b.addEventListener("click", () => openTab(b.dataset.panel)));
+if (["metrics", "training", "adapter", "examples"].includes(location.hash.slice(1))) openTab(location.hash.slice(1));
+
+// Metrics
+const sig = D.significance || {}, sigF = D.significance_final || {};
+const tile = (el, k, v, d) => { $(el).insertAdjacentHTML("beforeend", `<div class="panel tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d || ""}</div></div>`); };
+tile("tiles", "chrF++ (base → fine-tuned)", `${f1(S.base.chrfpp)} → ${f1(S.tuned.chrfpp)}`, `+${f1(S.tuned.chrfpp - S.base.chrfpp)}`);
+tile("tiles", "BLEU (base → fine-tuned)", `${f1(S.base.bleu)} → ${f1(S.tuned.bleu)}`, `+${f1(S.tuned.bleu - S.base.bleu)}`);
+tile("tiles", "Copies the input (base → fine-tuned)", `${pct(S.base.exact_copy_rate)} → ${pct(S.tuned.exact_copy_rate)}`, "");
+tile("tiles", "Test sentences", N, "held out from training");
+
+$("metricTable").innerHTML = `<thead><tr><th>System</th><th class="num">chrF++</th><th class="num">BLEU</th><th class="num">Copies input</th><th class="num">Exact match</th><th class="num">Δ chrF++ vs base (95% CI)</th></tr></thead><tbody>` +
+  ORDER.map((s) => {
+    const m = S[s], g = sig[s];
+    return `<tr><td><span class="dot" style="background:${COLOR[s]}"></span>${NAME[s]}</td><td class="num">${f2(m.chrfpp)}</td><td class="num">${f2(m.bleu)}</td>
+      <td class="num">${pct(m.exact_copy_rate)}</td><td class="num">${pct(m.exact_match_rate)}</td>
+      <td class="num">${g ? `+${f2(g.observed_delta)} (${f2(g.ci95_low)} to ${f2(g.ci95_high)})` : "—"}</td></tr>`;
+  }).join("") + "</tbody>";
+const f = sigF.tuned_700;
+$("metricNote").innerHTML = `Same ${N} held-out test sentences for every system. Confidence intervals from ${(sig.tuned || {}).samples || ""} paired bootstrap resamples; p = ${(sig.tuned || {}).p_value} for 1400 steps vs base.` +
+  (f ? ` 1400 vs 700 steps: +${f2(f.observed_delta)} chrF++ (95% CI ${f2(f.ci95_low)} to ${f2(f.ci95_high)}, p = ${f.p_value}).` : "");
+
+function bars(el, key, scale) {
+  $(el).innerHTML = ORDER.map((s) => {
+    const v = scale * S[s][key];
+    return `<div class="bar-row"><span>${SHORT[s]}</span>
+      <div class="track"><div class="fill" style="width:${v}%;background:${COLOR[s]}"></div></div><span class="val">${f1(v)}${scale === 100 ? "%" : ""}</span></div>`;
+  }).join("");
+}
+bars("chrfBars", "chrfpp", 1);
+bars("bleuBars", "bleu", 1);
+
+// Training
+const ev = D.dev_loss, tr = D.train_loss;
+tile("trainTiles", "Optimizer steps", D.steps, `${D.train_examples.toLocaleString()} training pairs`);
+tile("trainTiles", "Eval loss (first → last)", `${f2(ev[0][1])} → ${f2(ev[ev.length - 1][1])}`, "");
+if (D.best_dev) tile("trainTiles", "Best eval loss", f2(D.best_dev.eval_loss), `at step ${D.best_dev.global_step}`);
+tile("trainTiles", "Training loss (first → last)", `${f2(tr[0][1])} → ${f2(tr[tr.length - 1][1])}`, "logged every 5 steps");
+(function chart() {
+  const W = 960, H = 320, L = 46, R = 14, T = 12, B = 34;
+  const xMax = D.steps || Math.max(...tr.map((p) => p[0]));
+  const all = [...tr, ...ev].map((p) => p[1]);
+  const yMin = Math.floor(Math.min(...all) * 5) / 5, yMax = Math.ceil(Math.max(...all) * 5) / 5;
+  const X = (v) => L + (W - L - R) * v / xMax, Y = (v) => T + (H - T - B) * (yMax - v) / (yMax - yMin);
+  const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ");
+  const yt = []; for (let v = yMin; v <= yMax + 1e-9; v += 0.2) yt.push(+v.toFixed(1));
+  const xt = []; for (let v = 0; v <= xMax; v += 200) xt.push(v);
+  $("lossChart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Training and eval loss over ${xMax} steps">
+    ${yt.map((v) => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end">${v.toFixed(1)}</text>`).join("")}
+    ${xt.map((v) => `<text x="${X(v)}" y="${H - 12}" text-anchor="middle">${v}</text>`).join("")}
+    <line x1="${X(700)}" x2="${X(700)}" y1="${T}" y2="${H - B}" stroke="var(--half)" stroke-dasharray="5 5"/>
+    <path d="${path(tr)}" fill="none" stroke="var(--copy)" stroke-width="1.2"/>
+    <path d="${path(ev)}" fill="none" stroke="var(--after)" stroke-width="3"/>
+    ${ev.map((p) => `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="2.5" fill="var(--after)"/>`).join("")}
+  </svg><p class="note">Horizontal axis: optimizer step. Vertical axis: loss (lower is better).</p>`;
+})();
+// One row per checkpoint: eval loss, and the mean training loss logged in the preceding 50 steps.
+$("evalTable").innerHTML = `<thead><tr><th class="num">Step</th><th class="num">Training loss (avg of previous 50 steps)</th><th class="num">Eval loss</th></tr></thead><tbody>` +
+  ev.map(([step, loss]) => {
+    const win = tr.filter(([s]) => s > step - 50 && s <= step);
+    const avg = win.length ? win.reduce((a, [, v]) => a + v, 0) / win.length : null;
+    return `<tr><td class="num">${step}</td><td class="num">${avg === null ? "—" : avg.toFixed(4)}</td><td class="num">${loss.toFixed(4)}</td></tr>`;
+  }).join("") + "</tbody>";
+
+// QLoRA adapter (final, 1400 steps)
+const L = D.lora, TP = D.trainable || {}, LC = D.lora_config || {}, Q = D.quantization || {};
+tile("loraTiles", "Method: QLoRA", Q.load_in_4bit ? `4-bit ${esc(String(Q.quant_type).toUpperCase())} base` : "LoRA",
+  `frozen base loaded in 4-bit${Q.double_quant ? " (double quantization)" : ""}; LoRA adapters trained on top in fp32`);
+if (TP.trainable_parameters) tile("loraTiles", "Trainable parameters", `${(TP.trainable_parameters / 1e6).toFixed(1)}M`, `${TP.trainable_percentage.toFixed(2)}% of ${(TP.total_parameters / 1e9).toFixed(2)}B`);
+if (D.adapter_mb) tile("loraTiles", "Adapter file size", `${D.adapter_mb} MB`, "the base model file is unchanged");
+if (TP.target_module_count) tile("loraTiles", "Adapted modules", TP.target_module_count, "language layers only; vision/audio excluded");
+if (LC.rank) tile("loraTiles", "LoRA settings", `r ${LC.rank} · α ${LC.alpha}`, `dropout ${LC.dropout}`);
+if (L) {
+  tile("loraTiles", "Total weight change ‖ΔW‖", f2(L.total_norm_final), `over all ${L.modules} adapted modules`);
+  const mods = [...L.by_module].sort((a, b) => b.norm_final - a.norm_final);
+  const max = Math.max(...mods.map((m) => m.norm_final));
+  $("loraBars").innerHTML = mods.map((m) => `<div class="bar-row" style="grid-template-columns:170px 1fr 48px"><span>${esc(m.module)}</span>
+    <div class="track"><div class="fill" style="width:${100 * m.norm_final / max}%;background:var(--after)"></div></div>
+    <span class="val">${f2(m.norm_final)}</span></div>`).join("");
+
+  // RMS change per weight, by module type.
+  const rms = [...L.by_module].sort((a, b) => b.rms_per_weight - a.rms_per_weight);
+  const rmsMax = Math.max(...rms.map((m) => m.rms_per_weight));
+  $("rmsBars").innerHTML = rms.map((m) => `<div class="bar-row" style="grid-template-columns:170px 1fr 48px"><span>${esc(m.module)}</span>
+    <div class="track"><div class="fill" style="width:${100 * m.rms_per_weight / rmsMax}%;background:var(--half)"></div></div>
+    <span class="val">${(m.rms_per_weight * 1e4).toFixed(2)}</span></div>`).join("");
+
+}
+
+// Examples
+function render() {
+  const q = $("search").value.trim().toLowerCase(), sort = $("sort").value;
+  const gain = (r) => r.tuned_chrf - r.base_chrf;
+  const rows = D.explorer.filter((r) => !q || [r.source, r.target, ...MODELS.map((s) => r[s])].some((t) => String(t).toLowerCase().includes(q)));
+  rows.sort({ gain: (a, b) => gain(b) - gain(a), high: (a, b) => b.tuned_chrf - a.tuned_chrf, low: (a, b) => a.tuned_chrf - b.tuned_chrf }[sort]);
+  const total = D.explorer_total || D.explorer.length;
+  $("count").textContent = D.explorer.length < total
+    ? `Showing ${rows.length} example sentences out of ${total} test sentences: the largest improvements, one typical case and the hardest case. All metrics use all ${total}. Number on the right = sentence chrF++.`
+    : `${rows.length} of ${total} test sentences, showing up to 50. Number on the right = sentence chrF++.`;
+  $("sentences").innerHTML = rows.slice(0, 50).map((r) => `<div class="sent">
+      <div class="row"><span class="who">Bhili (source)</span><span>${esc(r.source)}</span><span></span></div>
+      <div class="row"><span class="who">Marathi (reference)</span><span>${esc(r.target)}</span><span></span></div>
+      ${MODELS.map((s) => `<div class="row"><span class="who" style="color:${COLOR[s]}">${NAME[s]}</span><span>${esc(r[s])}</span><span class="sc">${f1(r[s + "_chrf"])}</span></div>`).join("")}
+    </div>`).join("");
+}
+$("search").addEventListener("input", render);
+$("sort").addEventListener("change", render);
+render();
+</script>

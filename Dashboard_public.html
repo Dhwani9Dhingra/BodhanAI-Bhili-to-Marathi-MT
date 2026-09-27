@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<title>Fine Tuning for Machine Translation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Noto+Sans+Devanagari:wght@400;600&display=swap">
+<style>
+:root {
+  --paper: #f5f7f6; --panel: #ffffff; --ink: #1c2b2a; --muted: #5a6a68; --line: #dfe6e4;
+  --before: #c2562f; --half: #b98518; --after: #0e7c6b; --copy: #8e9a98; --accent: #0e7c6b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #101716; --panel: #182220; --ink: #e5eeeb; --muted: #9dafab; --line: #2a3835;
+    --before: #ec8a63; --half: #e2b650; --after: #45c3aa; --copy: #7d8c89; --accent: #45c3aa;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #101716; --panel: #182220; --ink: #e5eeeb; --muted: #9dafab; --line: #2a3835;
+  --before: #ec8a63; --half: #e2b650; --after: #45c3aa; --copy: #7d8c89; --accent: #45c3aa;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink);
+  font: 16px/1.5 "Atkinson Hyperlegible", "Noto Sans Devanagari", system-ui, "Segoe UI", sans-serif; padding-inline: 16px; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-block: 28px 48px; }
+h1 { font-size: clamp(26px, 4vw, 34px); margin: 0 0 4px; text-wrap: balance; }
+.desc { color: var(--muted); margin: 0 0 18px; font-size: 17px; }
+.desc code { font-size: 15px; }
+nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 20px; overflow-x: auto;
+  position: sticky; top: env(safe-area-inset-top, 0px); background: var(--paper); z-index: 2; }
+nav button { font: inherit; background: none; border: 0; border-bottom: 3px solid transparent; color: var(--muted);
+  padding: 10px 14px; cursor: pointer; white-space: nowrap; }
+nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 700; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.two { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); margin-top: 14px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; overflow-x: auto; }
+.panel h3 { margin: 0 0 10px; font-size: 16px; }
+.tile .k { font-size: 14px; color: var(--muted); }
+.tile .v { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 2px 0; }
+.tile .d { font-size: 14px; color: var(--after); font-weight: 700; }
+.note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+table { width: 100%; border-collapse: collapse; font-size: 15px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 700; font-size: 14px; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+.bars { display: grid; gap: 10px; }
+.bar-row { display: grid; grid-template-columns: 130px 1fr 56px; gap: 10px; align-items: center; font-size: 14px; }
+.track { position: relative; height: 22px; background: color-mix(in srgb, var(--line) 60%, transparent); border-radius: 5px; }
+.fill { position: absolute; inset: 0 auto 0 0; border-radius: 5px; }
+.val { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 14px; color: var(--muted); margin-top: 8px; }
+.legend i { display: inline-block; width: 18px; height: 3px; vertical-align: 4px; margin-right: 6px; }
+svg text { fill: var(--muted); font-size: 12px; font-family: "Atkinson Hyperlegible", sans-serif; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.controls input, .controls select { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--ink); }
+.controls input { flex: 1 1 260px; }
+.sent { display: grid; gap: 6px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.sent .row { display: grid; grid-template-columns: 170px 1fr 56px; gap: 10px; font-family: "Noto Sans Devanagari", "Atkinson Hyperlegible", sans-serif; }
+.sent .who { font-family: "Atkinson Hyperlegible", sans-serif; font-size: 14px; font-weight: 700; color: var(--muted); }
+.sent .sc { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; font-family: "Atkinson Hyperlegible", sans-serif; }
+@media (max-width: 600px) {
+  .two { grid-template-columns: 1fr; }
+  .adapter-charts > .panel:last-child { order: -1; }
+  .sent .row { grid-template-columns: 1fr auto; }
+  .sent .row .who { grid-column: 1 / -1; }
+  .bar-row { grid-template-columns: 96px 1fr 52px; }
+}
+</style>
+
+<div class="wrap">
+  <h1>Fine Tuning for Machine Translation</h1>
+  <p class="desc" id="desc"></p>
+  <nav role="tablist" id="tabs">
+    <button role="tab" id="tab-metrics" aria-selected="true" data-panel="metrics">Metrics</button>
+    <button role="tab" id="tab-training" aria-selected="false" data-panel="training">Training</button>
+    <button role="tab" id="tab-adapter" aria-selected="false" data-panel="adapter">QLoRA adapter</button>
+    <button role="tab" id="tab-examples" aria-selected="false" data-panel="examples">Example sentences</button>
+  </nav>
+
+  <section id="metrics" role="tabpanel">
+    <div class="grid" id="tiles"></div>
+    <div class="panel" style="margin-top:14px">
+      <h3>Test-set comparison</h3>
+      <table id="metricTable"></table>
+      <p class="note" id="metricNote"></p>
+    </div>
+    <div class="two">
+      <div class="panel"><h3>chrF++ (primary metric, 0–100)</h3><div class="bars" id="chrfBars"></div></div>
+      <div class="panel"><h3>BLEU (secondary metric, 0–100)</h3><div class="bars" id="bleuBars"></div></div>
+    </div>
+  </section>
+
+  <section id="training" role="tabpanel" hidden>
+    <div class="grid" id="trainTiles"></div>
+    <div class="panel" style="margin-top:14px">
+      <h3>Training loss and eval loss</h3>
+      <div id="lossChart"></div>
+      <div class="legend"><span><i style="background:var(--copy)"></i>training loss (every 5 steps)</span><span><i style="background:var(--after);height:4px"></i>eval loss on dev set (every 50 steps)</span><span><i style="background:var(--half)"></i>step 700: mid-training checkpoint</span></div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <h3>Training loss and eval loss at each checkpoint</h3>
+      <table id="evalTable"></table>
+      <p class="note">Eval loss: measured on the dev set at each checkpoint. Training loss: average of the logged training losses over the 50 steps before the checkpoint (each logged value covers one 5-step window, so single values are noisy).</p>
+    </div>
+  </section>
+
+  <section id="adapter" role="tabpanel" hidden>
+    <div class="grid" id="loraTiles" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))"></div>
+    <div class="two adapter-charts">
+      <div class="panel">
+        <h3>Weight change learned by the final adapter, by module type</h3>
+        <div class="bars" id="loraBars"></div>
+        <p class="note">For each adapted layer the adapter adds ΔW = (α/r)·B·A to the frozen base weight. Each bar is the size of that change (Frobenius norm), combined over all layers of the same type. Large matrices get large totals. Before training B = 0, so ΔW = 0 everywhere.</p>
+      </div>
+      <div class="panel">
+        <h3>Average change per weight, by module type</h3>
+        <div class="bars" id="rmsBars"></div>
+        <p class="note">Each total divided by the square root of the number of weights it covers (root-mean-square change per weight), so module types of different sizes compare fairly. Values are ×10⁻⁴.</p>
+      </div>
+    </div>
+    <p class="note">Both charts computed from <code>checkpoints/adapter_best</code> (step 1400).</p>
+  </section>
+
+  <section id="examples" role="tabpanel" hidden>
+    <div class="controls">
+      <input id="search" type="search" placeholder="Search Bhili, reference or translation" aria-label="Search sentences">
+      <select id="sort" aria-label="Sort sentences">
+        <option value="gain">Largest improvement over base</option>
+        <option value="high">Highest fine-tuned score</option>
+        <option value="low">Lowest fine-tuned score</option>
+      </select>
+    </div>
+    <p class="note" id="count"></p>
+    <div id="sentences"></div>
+  </section>
+</div>
+
+<script>
+const D = {"model": "bodhan-ai/indic-translate", "systems": {"copy_source": {"sentences": 300, "chrfpp": 34.9996, "bleu": 8.7231, "chrfpp_vs_source": 100.0, "exact_copy_rate": 1.0, "exact_match_rate": 0.0, "empty_rate": 0.0, "chrf_signature": "nrefs:1|case:mixed|eff:yes|nc:6|nw:2|space:no|version:2.6.0", "bleu_signature": "nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0"}, "base": {"sentences": 300, "chrfpp": 37.2248, "bleu": 11.7073, "chrfpp_vs_source": 92.6651, "exact_copy_rate": 0.59, "exact_match_rate": 0.0033, "empty_rate": 0.0, "chrf_signature": "nrefs:1|case:mixed|eff:yes|nc:6|nw:2|space:no|version:2.6.0", "bleu_signature": "nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0", "hit_token_limit_rate": 0.0}, "tuned": {"sentences": 300, "chrfpp": 60.0837, "bleu": 35.2453, "chrfpp_vs_source": 39.83, "exact_copy_rate": 0.0, "exact_match_rate": 0.0333, "empty_rate": 0.0, "chrf_signature": "nrefs:1|case:mixed|eff:yes|nc:6|nw:2|space:no|version:2.6.0", "bleu_signature": "nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0", "hit_token_limit_rate": 0.0}, "tuned_700": {"sentences": 300, "chrfpp": 58.8574, "bleu": 33.9641, "chrfpp_vs_source": 40.597, "exact_copy_rate": 0.0, "exact_match_rate": 0.0267, "empty_rate": 0.0, "chrf_signature": "nrefs:1|case:mixed|eff:yes|nc:6|nw:2|space:no|version:2.6.0", "bleu_signature": "nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.6.0", "hit_token_limit_rate": 0.0}}, "sentences": 300, "significance": {"tuned": {"metric": "chrfpp", "samples": 1000, "observed_delta": 22.8589, "ci95_low": 21.3309, "ci95_high": 24.562, "p_value": 0.001}, "tuned_700": {"metric": "chrfpp", "samples": 1000, "observed_delta": 21.6326, "ci95_low": 20.2283, "ci95_high": 23.2184, "p_value": 0.001}}, "significance_final": {"tuned_700": {"metric": "chrfpp", "samples": 1000, "observed_delta": 1.2264, "ci95_low": 0.3959, "ci95_high": 2.0877, "p_value": 0.002}}, "train_loss": [[5, 1.6641355514526368], [10, 1.5613744735717774], [15, 1.4257920265197754], [20, 1.0748122215270997], [25, 1.289332962036133], [30, 1.210482692718506], [35, 1.3992705345153809], [40, 1.3185276985168457], [45, 1.198108959197998], [50, 1.304239559173584], [55, 0.9224480628967285], [60, 1.2260799407958984], [65, 1.2224441528320313], [70, 1.0114325523376464], [75, 1.0857888221740724], [80, 1.1511280059814453], [85, 1.186482048034668], [90, 1.2145590782165527], [95, 1.051832389831543], [100, 0.9763435363769531], [105, 1.075411319732666], [110, 1.0143481254577638], [115, 0.9488364219665527], [120, 1.2313305854797363], [125, 0.9506349563598633], [130, 1.0121707916259766], [135, 1.0292718887329102], [140, 1.1055338859558106], [145, 1.2419225692749023], [150, 0.9781009674072265], [155, 0.9393574714660644], [160, 1.0085440635681153], [165, 0.955411434173584], [170, 1.1567370414733886], [175, 0.870998764038086], [180, 1.028281307220459], [185, 0.9114198684692383], [190, 0.8915700912475586], [195, 1.1325673103332519], [200, 0.9924702644348145], [205, 0.960146713256836], [210, 1.076209259033203], [215, 0.834835147857666], [220, 0.9983295440673828], [225, 1.1809296607971191], [230, 0.9401037216186523], [235, 0.9916880607604981], [240, 0.8963428497314453], [245, 0.9813124656677246], [250, 1.0921217918395996], [255, 1.0574222564697267], [260, 0.9552554130554199], [265, 0.8660845756530762], [270, 0.9663192749023437], [275, 0.8467960357666016], [280, 1.0090179443359375], [285, 0.8050323486328125], [290, 0.9882012367248535], [295, 0.8829715728759766], [300, 0.8336869239807129], [305, 0.8317180633544922], [310, 0.8337015151977539], [315, 0.7152546882629395], [320, 0.9582188606262207], [325, 1.1109066963195802], [330, 0.6899256706237793], [335, 0.7503428936004639], [340, 1.0779737472534179], [345, 1.0221935272216798], [350, 0.9064857482910156], [355, 0.9734580993652344], [360, 0.9824798583984375], [365, 0.8805320739746094], [370, 0.8845251083374024], [375, 1.005621337890625], [380, 0.7880475521087646], [385, 0.823552131652832], [390, 0.8473411560058594], [395, 0.9911192893981934], [400, 0.9022753715515137], [405, 0.9528360366821289], [410, 0.978579044342041], [415, 0.8438527107238769], [420, 0.9877034187316894], [425, 0.7579047203063964], [430, 0.9015220642089844], [435, 0.8823441505432129], [440, 0.9178306579589843], [445, 0.8012112617492676], [450, 0.8723152160644532], [455, 0.884315299987793], [460, 0.8219544410705566], [465, 0.9531493186950684], [470, 0.8820896148681641], [475, 0.9387438774108887], [480, 0.869876766204834], [485, 0.8902721405029297], [490, 0.8041016578674316], [495, 0.8787412643432617], [500, 0.8941631317138672], [505, 0.7281365394592285], [510, 0.7986869812011719], [515, 0.958646297454834], [520, 0.8840006828308106], [525, 0.8043385505676269], [530, 0.9193812370300293], [535, 0.9041659355163574], [540, 0.7707676410675048], [545, 0.744438886642456], [550, 0.7274071216583252], [555, 0.8207185745239258], [560, 0.8800317764282226], [565, 0.8473175048828125], [570, 0.8329087257385254], [575, 0.9295253753662109], [580, 0.8263032913208008], [585, 0.8175128936767578], [590, 0.9357918739318848], [595, 0.9277445793151855], [600, 0.9136914253234864], [605, 0.8892101287841797], [610, 0.6332828044891358], [615, 0.8962701797485352], [620, 0.8259119033813477], [625, 1.0778525352478028], [630, 0.8491782188415528], [635, 0.8396026611328125], [640, 0.8603916168212891], [645, 0.8326035499572754], [650, 0.9505317687988282], [655, 0.8411945343017578], [660, 1.0953740119934081], [665, 0.7686243534088135], [670, 0.9443548202514649], [675, 0.6661553859710694], [680, 0.6562533378601074], [685, 0.8864758491516114], [690, 0.7837024688720703], [695, 0.8234818458557129], [700, 1.0147393226623536], [705, 0.7066452503204346], [710, 0.9484903335571289], [715, 0.9148181915283203], [720, 0.9325168609619141], [725, 0.7325766563415528], [730, 1.0208587646484375], [735, 0.9468839645385743], [740, 1.0217617988586425], [745, 0.8615084648132324], [750, 0.9012803077697754], [755, 0.9453110694885254], [760, 0.8884199142456055], [765, 1.0196098327636718], [770, 0.7880648612976074], [775, 0.8311871528625489], [780, 0.999346923828125], [785, 0.83231201171875], [790, 0.936948013305664], [795, 0.8998441696166992], [800, 0.9284031867980957], [805, 0.9194458961486817], [810, 1.013605499267578], [815, 0.8087304115295411], [820, 0.8828449249267578], [825, 0.9796340942382813], [830, 0.7876701831817627], [835, 0.9846438407897949], [840, 0.7200039863586426], [845, 0.7000865936279297], [850, 0.946265697479248], [855, 0.8539265632629395], [860, 0.7492278099060059], [865, 0.9984589576721191], [870, 0.7898430824279785], [875, 0.9109588623046875], [880, 0.8403375625610352], [885, 0.691041898727417], [890, 0.8169234275817872], [895, 0.9436060905456543], [900, 0.877109432220459], [905, 0.8987260818481445], [910, 0.827495002746582], [915, 0.8863502502441406], [920, 0.8818114280700684], [925, 0.9210166931152344], [930, 0.9277811050415039], [935, 0.7444212436676025], [940, 0.8046249389648438], [945, 0.8849778175354004], [950, 0.8938386917114258], [955, 0.8710404396057129], [960, 0.9326060295104981], [965, 0.7246997356414795], [970, 0.6897538185119629], [975, 0.8931685447692871], [980, 0.7047164916992188], [985, 0.6405202865600585], [990, 0.8210924148559571], [995, 0.9412723541259765], [1000, 0.7706058025360107], [1005, 0.8418922424316406], [1010, 0.8959904670715332], [1015, 0.9719986915588379], [1020, 0.8316393852233886], [1025, 1.0002671241760255], [1030, 0.8015547752380371], [1035, 0.763731575012207], [1040, 0.8235073089599609], [1045, 0.9303071975708008], [1050, 0.848208999633789], [1055, 0.9221607208251953], [1060, 0.9398044586181641], [1065, 0.7653432369232178], [1070, 0.7283339023590087], [1075, 0.6748316287994385], [1080, 0.9063568115234375], [1085, 0.6905710220336914], [1090, 0.7592450618743897], [1095, 0.8752607345581055], [1100, 0.9134363174438477], [1105, 0.8013044357299804], [1110, 0.7642597675323486], [1115, 0.8055695533752442], [1120, 1.0404206275939942], [1125, 0.8457929611206054], [1130, 0.7693580150604248], [1135, 0.8178271293640137], [1140, 0.9677845954895019], [1145, 0.9824968338012695], [1150, 0.8517083168029785], [1155, 0.789238691329956], [1160, 0.7152196884155273], [1165, 1.0046159744262695], [1170, 0.7748729228973389], [1175, 0.9011493682861328], [1180, 0.908777904510498], [1185, 0.7424448966979981], [1190, 0.8417501449584961], [1195, 0.7822730064392089], [1200, 0.8367143630981445], [1205, 0.923255729675293], [1210, 0.7539775848388672], [1215, 0.8254151344299316], [1220, 0.5628564357757568], [1225, 0.7803176403045654], [1230, 0.9332615852355957], [1235, 0.8396394729614258], [1240, 0.8041413307189942], [1245, 0.7177155017852783], [1250, 0.8330631256103516], [1255, 0.8426248550415039], [1260, 0.7927372455596924], [1265, 0.707460355758667], [1270, 0.9867701530456543], [1275, 0.9189567565917969], [1280, 0.8448675155639649], [1285, 0.8922392845153808], [1290, 0.6983372211456299], [1295, 0.802403736114502], [1300, 0.597811508178711], [1305, 0.7994752883911133], [1310, 0.8520281791687012], [1315, 0.7530826568603516], [1320, 0.8207208633422851], [1325, 0.795604133605957], [1330, 0.6984822273254394], [1335, 0.9754693031311035], [1340, 0.7167954444885254], [1345, 0.8678879737854004], [1350, 0.7666146278381347], [1355, 0.785873556137085], [1360, 0.9217348098754883], [1365, 0.7723207950592041], [1370, 0.7294053554534912], [1375, 0.8015538215637207], [1380, 1.0087995529174805], [1385, 0.5656453132629394], [1390, 0.7374074459075928], [1395, 0.7821208477020264], [1400, 0.7018774032592774]], "dev_loss": [[50, 1.0629290342330933], [100, 0.9632528424263], [150, 0.9189425706863403], [200, 0.8928505182266235], [250, 0.8674839735031128], [300, 0.8571825623512268], [350, 0.8389742970466614], [400, 0.8325333595275879], [450, 0.8243772983551025], [500, 0.8151047229766846], [550, 0.8111506700515747], [600, 0.8037393093109131], [650, 0.8006784319877625], [700, 0.7996052503585815], [701, 0.7996052503585815], [750, 0.8048872351646423], [800, 0.7992790937423706], [850, 0.7939531803131104], [900, 0.7901796102523804], [950, 0.7879693508148193], [1000, 0.7820094227790833], [1050, 0.7777212262153625], [1100, 0.7738351225852966], [1150, 0.7685878276824951], [1200, 0.7666009664535522], [1250, 0.7624225616455078], [1300, 0.7611105442047119], [1350, 0.7611793279647827], [1400, 0.7601898312568665]], "steps": 1400, "train_examples": 11195, "best_dev": {"eval_loss": 0.7601898312568665, "global_step": 1400, "saved_at_utc": "2026-09-27T07:41:39.669917+00:00"}, "trainable": {"total_parameters": 5743097120, "trainable_parameters": 19439616, "trainable_percentage": 0.338487, "target_module_count": 343, "trainable_parameter_count": 686, "preparation": "freeze_base_preserve_dtype", "adapter_dtype": "float32", "gradient_checkpointing": true}, "lora": {"modules": 343, "total_norm_final": 20.378381195153075, "by_module": [{"module": "down_proj", "norm_final": 6.3219845768717775, "weights": 1101004800, "rms_per_weight": 0.00019052800754296747}, {"module": "gate_proj", "norm_final": 13.182843876537524, "weights": 1101004800, "rms_per_weight": 0.00039729628362831837}, {"module": "k_proj", "norm_final": 1.541166581385508, "weights": 36700160, "rms_per_weight": 0.0002543991198248759}, {"module": "o_proj", "norm_final": 4.275250379917392, "weights": 256901120, "rms_per_weight": 0.00026673410910510854}, {"module": "per_layer_input_gate", "norm_final": 1.9754066159888708, "weights": 27525120, "rms_per_weight": 0.00037652333215753013}, {"module": "per_layer_model_projection", "norm_final": 1.4125665729554389, "weights": 27525120, "rms_per_weight": 0.0002692429339046626}, {"module": "per_layer_projection", "norm_final": 4.804525562702235, "weights": 27525120, "rms_per_weight": 0.000915768915453946}, {"module": "q_proj", "norm_final": 4.211687547188991, "weights": 256901120, "rms_per_weight": 0.0002627684055665161}, {"module": "up_proj", "norm_final": 11.461851718609775, "weights": 1101004800, "rms_per_weight": 0.0003454301009668455}, {"module": "v_proj", "norm_final": 1.6664932974092737, "weights": 36700160, "rms_per_weight": 0.0002750866993714849}], "adapter_mb": 77.9}, "adapter_mb": 77.9, "lora_config": {"rank": 8, "alpha": 16, "dropout": 0.05, "bias": "none", "target_strategy": "all_linear_filtered", "exclude_name_fragments": ["vision", "visual", "image", "audio", "lm_head", "embed_tokens"]}, "quantization": {"enabled": true, "load_in_4bit": true, "quant_type": "nf4", "double_quant": true, "compute_dtype": "auto"}, "explorer": [{"source": "जर तुम्हाल तुमा पैसा मंदी कालाखातर सुरक्षित थोवणू वेरी ता शहाणपणाके गुंतवणूक केरा.", "target": "जर तुम्हाला तुमचे पैसे मंदीच्या काळासाठी सुरक्षित ठेवायचे असतील तर शहाणपणाने गुंतवणूक करा.", "base": "जर तुम्हाल तुमा पैसा मंदी कालाखातर सुरक्षित थोवणू वेरी ता शहाणपणाके गुंतवणूक केरा.", "base_chrf": 36.2, "tuned_700": "जर तुम्हाला तुमचे पैसे मंदीच्या काळासाठी सुरक्षित ठेवायचे असतील तर शहाणपणाने गुंतवणूक करा.", "tuned_700_chrf": 100.0, "tuned": "जर तुम्हाला तुमचे पैसे मंदीच्या काळासाठी सुरक्षित ठेवायचे असतील तर शहाणपणाने गुंतवणूक करा.", "tuned_chrf": 100.0}, {"source": "घेडी घेडी फुचले जाणारे प्रश्नामं सोपि गोठी उत्तरे मिली सेकतेहे.", "target": "वारंवार विचारल्या जाणाऱ्या प्रश्नांमध्ये सर्वसाधारण समस्यांची उत्तरे मिळू शकतात.", "base": "घेडी घेडी फुचले जाणारे प्रश्नामं सोपि गोठी उत्तरे मिली सेकतेहे.", "base_chrf": 19.3, "tuned_700": "वारंवार विचारल्या जाणाऱ्या प्रश्नांमध्ये सोप्या गोष्टींची उत्तरे मिळू शकतात.", "tuned_700_chrf": 76.3, "tuned": "वारंवार विचारल्या जाणाऱ्या प्रश्नांमध्ये सोप्या प्रश्नांची उत्तरे मिळू शकतात.", "tuned_chrf": 77.4}, {"source": "खाडी नी लांबी अने रुंदी माथी वसायला घणा गावांमां घणा मंदिरा हाय.", "target": "नदीच्या लांबी आणि रुंदीवर वसलेल्या असंख्य गावांमध्ये अनेक मंदिरे आहेत.", "base": "खाडी नी लांबी अने रुंदी माथी वसायला घणा गावांमां घणा मंदिरा हाय.", "base_chrf": 21.1, "tuned_700": "नदीच्या लांबी आणि रुंदीवर वसलेल्या अनेक गावांमध्ये अनेक मंदिरे आहेत.", "tuned_700_chrf": 87.1, "tuned": "नदीच्या लांबी आणि रुंदीच्या मध्यभागी वसलेल्या अनेक गावांमध्ये अनेक मंदिरे आहेत.", "tuned_chrf": 76.1}, {"source": "जमीन आण पाइ डोगूपे देखी ओधरे तहा बाराम देखणाऱ्या खुप धबधबा देखाता.", "target": "भूजल पातळी डोंगर उतारांना कापून जाते, जे दरीत दिसणाऱ्या असंख्य झऱ्यांवरून सिद्ध होते.", "base": "जमीन आण पाइ डोगूपे देखी ओधरे तहा बाराम देखणाऱ्या खुप धबधबा देखाता.", "base_chrf": 11.8, "tuned_700": "जमीन आणि खडकांवर दिसणारे अनेक धबधबे आहेत.", "tuned_700_chrf": 9.4, "tuned": "जमीन आणि पाण्याच्या डोंगरांवरून पाहिल्यास, खाली अनेक धबधबे दिसतात.", "tuned_chrf": 18.0}, {"source": "तों स्वीकारल्या फाचे तुम्हा बॅच खातोर वेचातोंला चालू केरा नाय वेरी ता ४५ मिनिटांम \"लेट\" फाचला तों स्वीकारलो जाय.", "target": "ते स्वीकारल्यानंतर तुम्ही तुमच्या बॅचसाठी खरेदी सुरू केली नसल्यास ४५ मिनिटांच्या \"विलंबा\" नंतर ते स्वीकारले जाईल.", "base": "तों स्वीकारल्या फाचे तुम्हा बॅच खातोर वेचातोंला चालू केरा नाय वेरी ता ४५ मिनिटांम \"लेट\" फाचला तों स्वीकारलो जाय.", "base_chrf": 27.5, "tuned_700": "ते स्वीकारल्यानंतर तुमच्या बॅचसाठी विक्री सुरू न केल्यास ४५ मिनिटांत \"लेट\" म्हणून स्वीकारले जाईल.", "tuned_700_chrf": 56.6, "tuned": "ते स्वीकारल्यानंतर तुमच्या बॅचसाठी विक्री सुरू केली नसेल तर ४५ मिनिटांत \"लेट\" नंतर स्वीकारले जाईल.", "tuned_chrf": 60.5}], "explorer_total": 300};
+const S = D.systems;
+const $ = (id) => document.getElementById(id);
+const f1 = (x) => Number(x).toFixed(1), f2 = (x) => Number(x).toFixed(2);
+const pct = (x) => (100 * x).toFixed(1) + "%";
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const NAME = { copy_source: "Copy input (reference point)", base: "Base model", tuned_700: "Fine-tuned, 700 steps", tuned: "Fine-tuned, 1400 steps" };
+const SHORT = { copy_source: "Copy input", base: "Base", tuned_700: "700 steps", tuned: "1400 steps" };
+const COLOR = { copy_source: "var(--copy)", base: "var(--before)", tuned_700: "var(--half)", tuned: "var(--after)" };
+const ORDER = ["copy_source", "base", "tuned_700", "tuned"].filter((s) => S[s]);
+const MODELS = ORDER.filter((s) => s !== "copy_source");
+const N = D.sentences;
+
+$("desc").innerHTML = `Fine-Tuning Bodhan AI model Indic-Translate (<code>${esc(D.model)}</code>) for Machine Translation (Dehwali Bhili → Marathi) using QLoRA`;
+
+// Tabs
+const tabs = [...document.querySelectorAll("nav button")];
+function openTab(id) {
+  tabs.forEach((b) => b.setAttribute("aria-selected", String(b.dataset.panel === id)));
+  document.querySelectorAll("section").forEach((s) => { s.hidden = s.id !== id; });
+}
+tabs.forEach((b) => b.addEventListener("click", () => openTab(b.dataset.panel)));
+if (["metrics", "training", "adapter", "examples"].includes(location.hash.slice(1))) openTab(location.hash.slice(1));
+
+// Metrics
+const sig = D.significance || {}, sigF = D.significance_final || {};
+const tile = (el, k, v, d) => { $(el).insertAdjacentHTML("beforeend", `<div class="panel tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d || ""}</div></div>`); };
+tile("tiles", "chrF++ (base → fine-tuned)", `${f1(S.base.chrfpp)} → ${f1(S.tuned.chrfpp)}`, `+${f1(S.tuned.chrfpp - S.base.chrfpp)}`);
+tile("tiles", "BLEU (base → fine-tuned)", `${f1(S.base.bleu)} → ${f1(S.tuned.bleu)}`, `+${f1(S.tuned.bleu - S.base.bleu)}`);
+tile("tiles", "Copies the input (base → fine-tuned)", `${pct(S.base.exact_copy_rate)} → ${pct(S.tuned.exact_copy_rate)}`, "");
+tile("tiles", "Test sentences", N, "held out from training");
+
+$("metricTable").innerHTML = `<thead><tr><th>System</th><th class="num">chrF++</th><th class="num">BLEU</th><th class="num">Copies input</th><th class="num">Exact match</th><th class="num">Δ chrF++ vs base (95% CI)</th></tr></thead><tbody>` +
+  ORDER.map((s) => {
+    const m = S[s], g = sig[s];
+    return `<tr><td><span class="dot" style="background:${COLOR[s]}"></span>${NAME[s]}</td><td class="num">${f2(m.chrfpp)}</td><td class="num">${f2(m.bleu)}</td>
+      <td class="num">${pct(m.exact_copy_rate)}</td><td class="num">${pct(m.exact_match_rate)}</td>
+      <td class="num">${g ? `+${f2(g.observed_delta)} (${f2(g.ci95_low)} to ${f2(g.ci95_high)})` : "—"}</td></tr>`;
+  }).join("") + "</tbody>";
+const f = sigF.tuned_700;
+$("metricNote").innerHTML = `Same ${N} held-out test sentences for every system. Confidence intervals from ${(sig.tuned || {}).samples || ""} paired bootstrap resamples; p = ${(sig.tuned || {}).p_value} for 1400 steps vs base.` +
+  (f ? ` 1400 vs 700 steps: +${f2(f.observed_delta)} chrF++ (95% CI ${f2(f.ci95_low)} to ${f2(f.ci95_high)}, p = ${f.p_value}).` : "");
+
+function bars(el, key, scale) {
+  $(el).innerHTML = ORDER.map((s) => {
+    const v = scale * S[s][key];
+    return `<div class="bar-row"><span>${SHORT[s]}</span>
+      <div class="track"><div class="fill" style="width:${v}%;background:${COLOR[s]}"></div></div><span class="val">${f1(v)}${scale === 100 ? "%" : ""}</span></div>`;
+  }).join("");
+}
+bars("chrfBars", "chrfpp", 1);
+bars("bleuBars", "bleu", 1);
+
+// Training
+const ev = D.dev_loss, tr = D.train_loss;
+tile("trainTiles", "Optimizer steps", D.steps, `${D.train_examples.toLocaleString()} training pairs`);
+tile("trainTiles", "Eval loss (first → last)", `${f2(ev[0][1])} → ${f2(ev[ev.length - 1][1])}`, "");
+if (D.best_dev) tile("trainTiles", "Best eval loss", f2(D.best_dev.eval_loss), `at step ${D.best_dev.global_step}`);
+tile("trainTiles", "Training loss (first → last)", `${f2(tr[0][1])} → ${f2(tr[tr.length - 1][1])}`, "logged every 5 steps");
+(function chart() {
+  const W = 960, H = 320, L = 46, R = 14, T = 12, B = 34;
+  const xMax = D.steps || Math.max(...tr.map((p) => p[0]));
+  const all = [...tr, ...ev].map((p) => p[1]);
+  const yMin = Math.floor(Math.min(...all) * 5) / 5, yMax = Math.ceil(Math.max(...all) * 5) / 5;
+  const X = (v) => L + (W - L - R) * v / xMax, Y = (v) => T + (H - T - B) * (yMax - v) / (yMax - yMin);
+  const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ");
+  const yt = []; for (let v = yMin; v <= yMax + 1e-9; v += 0.2) yt.push(+v.toFixed(1));
+  const xt = []; for (let v = 0; v <= xMax; v += 200) xt.push(v);
+  $("lossChart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Training and eval loss over ${xMax} steps">
+    ${yt.map((v) => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end">${v.toFixed(1)}</text>`).join("")}
+    ${xt.map((v) => `<text x="${X(v)}" y="${H - 12}" text-anchor="middle">${v}</text>`).join("")}
+    <line x1="${X(700)}" x2="${X(700)}" y1="${T}" y2="${H - B}" stroke="var(--half)" stroke-dasharray="5 5"/>
+    <path d="${path(tr)}" fill="none" stroke="var(--copy)" stroke-width="1.2"/>
+    <path d="${path(ev)}" fill="none" stroke="var(--after)" stroke-width="3"/>
+    ${ev.map((p) => `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="2.5" fill="var(--after)"/>`).join("")}
+  </svg><p class="note">Horizontal axis: optimizer step. Vertical axis: loss (lower is better).</p>`;
+})();
+// One row per checkpoint: eval loss, and the mean training loss logged in the preceding 50 steps.
+$("evalTable").innerHTML = `<thead><tr><th class="num">Step</th><th class="num">Training loss (avg of previous 50 steps)</th><th class="num">Eval loss</th></tr></thead><tbody>` +
+  ev.map(([step, loss]) => {
+    const win = tr.filter(([s]) => s > step - 50 && s <= step);
+    const avg = win.length ? win.reduce((a, [, v]) => a + v, 0) / win.length : null;
+    return `<tr><td class="num">${step}</td><td class="num">${avg === null ? "—" : avg.toFixed(4)}</td><td class="num">${loss.toFixed(4)}</td></tr>`;
+  }).join("") + "</tbody>";
+
+// QLoRA adapter (final, 1400 steps)
+const L = D.lora, TP = D.trainable || {}, LC = D.lora_config || {}, Q = D.quantization || {};
+tile("loraTiles", "Method: QLoRA", Q.load_in_4bit ? `4-bit ${esc(String(Q.quant_type).toUpperCase())} base` : "LoRA",
+  `frozen base loaded in 4-bit${Q.double_quant ? " (double quantization)" : ""}; LoRA adapters trained on top in fp32`);
+if (TP.trainable_parameters) tile("loraTiles", "Trainable parameters", `${(TP.trainable_parameters / 1e6).toFixed(1)}M`, `${TP.trainable_percentage.toFixed(2)}% of ${(TP.total_parameters / 1e9).toFixed(2)}B`);
+if (D.adapter_mb) tile("loraTiles", "Adapter file size", `${D.adapter_mb} MB`, "the base model file is unchanged");
+if (TP.target_module_count) tile("loraTiles", "Adapted modules", TP.target_module_count, "language layers only; vision/audio excluded");
+if (LC.rank) tile("loraTiles", "LoRA settings", `r ${LC.rank} · α ${LC.alpha}`, `dropout ${LC.dropout}`);
+if (L) {
+  tile("loraTiles", "Total weight change ‖ΔW‖", f2(L.total_norm_final), `over all ${L.modules} adapted modules`);
+  const mods = [...L.by_module].sort((a, b) => b.norm_final - a.norm_final);
+  const max = Math.max(...mods.map((m) => m.norm_final));
+  $("loraBars").innerHTML = mods.map((m) => `<div class="bar-row" style="grid-template-columns:170px 1fr 48px"><span>${esc(m.module)}</span>
+    <div class="track"><div class="fill" style="width:${100 * m.norm_final / max}%;background:var(--after)"></div></div>
+    <span class="val">${f2(m.norm_final)}</span></div>`).join("");
+
+  // RMS change per weight, by module type.
+  const rms = [...L.by_module].sort((a, b) => b.rms_per_weight - a.rms_per_weight);
+  const rmsMax = Math.max(...rms.map((m) => m.rms_per_weight));
+  $("rmsBars").innerHTML = rms.map((m) => `<div class="bar-row" style="grid-template-columns:170px 1fr 48px"><span>${esc(m.module)}</span>
+    <div class="track"><div class="fill" style="width:${100 * m.rms_per_weight / rmsMax}%;background:var(--half)"></div></div>
+    <span class="val">${(m.rms_per_weight * 1e4).toFixed(2)}</span></div>`).join("");
+
+}
+
+// Examples
+function render() {
+  const q = $("search").value.trim().toLowerCase(), sort = $("sort").value;
+  const gain = (r) => r.tuned_chrf - r.base_chrf;
+  const rows = D.explorer.filter((r) => !q || [r.source, r.target, ...MODELS.map((s) => r[s])].some((t) => String(t).toLowerCase().includes(q)));
+  rows.sort({ gain: (a, b) => gain(b) - gain(a), high: (a, b) => b.tuned_chrf - a.tuned_chrf, low: (a, b) => a.tuned_chrf - b.tuned_chrf }[sort]);
+  const total = D.explorer_total || D.explorer.length;
+  $("count").textContent = D.explorer.length < total
+    ? `Showing ${rows.length} example sentences out of ${total} test sentences: the largest improvements, one typical case and the hardest case. All metrics use all ${total}. Number on the right = sentence chrF++.`
+    : `${rows.length} of ${total} test sentences, showing up to 50. Number on the right = sentence chrF++.`;
+  $("sentences").innerHTML = rows.slice(0, 50).map((r) => `<div class="sent">
+      <div class="row"><span class="who">Bhili (source)</span><span>${esc(r.source)}</span><span></span></div>
+      <div class="row"><span class="who">Marathi (reference)</span><span>${esc(r.target)}</span><span></span></div>
+      ${MODELS.map((s) => `<div class="row"><span class="who" style="color:${COLOR[s]}">${NAME[s]}</span><span>${esc(r[s])}</span><span class="sc">${f1(r[s + "_chrf"])}</span></div>`).join("")}
+    </div>`).join("");
+}
+$("search").addEventListener("input", render);
+$("sort").addEventListener("change", render);
+render();
+</script>
+
+</body>
+</html>
