@@ -13,7 +13,9 @@ Implemented:
 
 - Resumable QLoRA training (`scripts.train`) with Drive checkpoints and best-dev-loss adapter export.
 
-Baseline scoring, retention evaluation, final evaluation, and the dashboard are still pending. Full training has not yet been verified on Colab.
+- Resumable test evaluation (`scripts.evaluate`): base and tuned translations, chrF++/BLEU/copy metrics, paired bootstrap significance, length analysis, and Drive packaging.
+
+Retention evaluation (other translation directions) and the dashboard are still pending.
 
 ## Repository layout
 
@@ -124,6 +126,20 @@ Training saves a checkpoint to `checkpoints/trainer/` on Drive every `save_steps
 
 Rerunning a finished run does nothing. To train a finished run longer, raise only `training.max_steps` and pass `--extend`: training continues from the newest checkpoint with its optimizer state and data order (so new steps see examples not yet trained on), and the learning rate follows the longer schedule. The adapter being extended is first copied to `checkpoints/adapter_step_<step>/` so checkpoint rotation cannot delete it. The first extended step runs at the old schedule's final learning rate (zero), a Trainer resume quirk.
 
+## Evaluation
+
+Each system translates the same `evaluation.test_generation_samples` sentences drawn (with the project seed) from the frozen test split, whose hash is checked first. Predictions are appended to `evaluation/predictions_<system>.jsonl` batch by batch, so rerunning a command after a disconnect continues where it stopped.
+
+```python
+!python -m scripts.evaluate generate --config configs/colab_t4.yaml --system base
+!python -m scripts.evaluate generate --config configs/colab_t4.yaml --system tuned
+!python -m scripts.evaluate report --config configs/colab_t4.yaml
+```
+
+`tuned` uses `checkpoints/adapter_best` by default; any other adapter can be scored under its own name, for example `--system tuned_700 --adapter checkpoints/adapter_step_701`. `--limit 5` translates only the first five sampled sentences as a smoke test; a later full run reuses them. Generation is greedy with `--max-new-tokens 256` and `--batch-size 8` by default (a CUDA out-of-memory error halves the batch). A system's settings are fixed once its predictions exist.
+
+`report` scores every system plus a `copy_source` baseline (the Bhili input unchanged, since both languages use Devanagari), runs a paired bootstrap on chrF++ for each system against `base`, and writes `reports/evaluation_report.json`, `evaluation/test_predictions.csv`, `most_improved.csv`, and `most_regressed.csv`. When `tuned` is complete it also writes `package/` with the adapter, processor, report, and a model card. Prediction files are plain JSON lines, so a system generated in another Colab account can be copied into this run's `evaluation/` folder together with its `generation_<system>.json`.
+
 ## Drive artifact layout
 
 ```text
@@ -131,7 +147,8 @@ BodhanAI/artifacts/bodhan-bhili-mt/<run_id>/
     data/                train.tsv, dev.tsv, test.tsv
     reports/             Config, manifest, state, data audit, hashes, smoke and training reports
     logs/                pipeline.log
-    evaluation/          model_smoke_predictions.csv
+    evaluation/          Smoke and test predictions, per-sentence scores
+    package/             Final adapter, processor, evaluation report, model card
     checkpoints/
         adapter_initial/ Adapter before smoke updates
         adapter_final/   Final adapter and processor (smoke or training)
