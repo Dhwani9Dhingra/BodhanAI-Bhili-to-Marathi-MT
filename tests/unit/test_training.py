@@ -162,6 +162,7 @@ def test_missing_fingerprint_blocks_resume(tmp_path):
 def test_warmup_ratio_rounds_up_to_whole_steps():
     """3% of 300 steps is 9 warmup steps."""
     config = load_config("configs/colab_t4.yaml")
+    config.training.max_steps = 300
 
     assert warmup_steps(config) == 9
 
